@@ -1,1 +1,1341 @@
+--//====================================================--
+--//         SIMPLE HUB - ADVANCED EDITION             --//
+--//====================================================--
+--//  Kill Aura + Speed + Infinite Jump                --//
+--//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --//
+--//  ESP + Tracers + Health Bars (Players & NPCs)     --//
+--//  Dual Autofarm Mode: Behind / Above NPC           --//
+--//  Resizable & Draggable Window                     --//
+--//====================================================--
 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Remote for Kill Aura
+local swingRemote = ReplicatedStorage:WaitForChild("RsPackage"):WaitForChild("Swing")
+
+-- Constants
+local CONFIG = {
+    TELEPORT_SPEED = 150,
+    MAX_TELEPORT_DISTANCE = 500,
+    NPC_SCAN_INTERVAL = 0.3,
+    CHAR_CACHE_UPDATE = 0.5,
+    MAX_TARGET_DISTANCE = 70,
+    GUI_MIN_SIZE = Vector2.new(320, 420),
+    GUI_DEFAULT_SIZE = Vector2.new(360, 520),
+    ESP_FOLDER_NPC = workspace:WaitForChild("Humanoids"),
+    ESP_FOLDER_PLAYER = workspace, -- players are directly in workspace
+    TELEPORT_FOLDER_NPC = workspace:WaitForChild("Humanoids"),
+    TELEPORT_FOLDER_PLAYER = workspace,
+}
+
+-- State
+local State = {
+    -- existing
+    speedEnabled = false,
+    speedValue = 160,
+    infiniteJumpEnabled = false,
+    
+    -- new features
+    killAuraEnabled = false,
+    killAuraDelay = 0.3,
+    lastKillAuraTime = 0,
+    
+    lockOnEnabled = false,
+    lockedTarget = nil,
+    
+    autofarmEnabled = false,
+    autofarmMode = "Behind", -- "Behind" or "Above"
+    autofarmDistance = 8,
+    lockedNPC = nil,
+    
+    espEnabled = false,
+    tracersEnabled = false,
+    healthBarsEnabled = false,
+    playerESPEnabled = false,
+    
+    teleportMode = "Smooth", -- "Smooth" or "Direct"
+    isTeleporting = false,
+    
+    noClipEnabled = false,
+    
+    -- cache
+    npcCache = {},
+    lastNPCScan = 0,
+    charCache = { root = nil, hum = nil, char = nil, lastUpdate = 0 },
+    connections = {},
+    
+    -- ESP objects
+    espObjects = {},
+    tracerLines = {},
+    healthBarObjects = {},
+    playerESPObjects = {},
+}
+
+-- Utils
+local Utils = {}
+
+function Utils.disconnectConnection(name)
+    if State.connections[name] then
+        State.connections[name]:Disconnect()
+        State.connections[name] = nil
+    end
+end
+
+function Utils.getCharComponents()
+    local now = tick()
+    if now - State.charCache.lastUpdate > CONFIG.CHAR_CACHE_UPDATE then
+        local char = LocalPlayer.Character
+        State.charCache.char = char
+        State.charCache.root = char and char:FindFirstChild("HumanoidRootPart")
+        State.charCache.hum = char and char:FindFirstChildOfClass("Humanoid")
+        State.charCache.lastUpdate = now
+    end
+    return State.charCache.root, State.charCache.hum, State.charCache.char
+end
+
+function Utils.invalidateCharCache()
+    State.charCache.lastUpdate = 0
+end
+
+function Utils.animateToggle(bg, circle, enabled)
+    TweenService:Create(bg, TweenInfo.new(0.2), {
+        BackgroundColor3 = enabled and Color3.fromRGB(100, 180, 255) or Color3.fromRGB(40, 40, 55)
+    }):Play()
+    TweenService:Create(circle, TweenInfo.new(0.2), {
+        Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    }):Play()
+end
+
+-- NPC Cache
+local NPCCache = {}
+
+function NPCCache.updateCache()
+    table.clear(State.npcCache)
+    local root = Utils.getCharComponents()
+    if not root then return end
+    for _, npc in ipairs(CONFIG.ESP_FOLDER_NPC:GetChildren()) do
+        if npc:IsA("Model") and npc ~= LocalPlayer.Character then
+            local hum = npc:FindFirstChild("Humanoid")
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if hum and npcRoot and hum.Health > 0 then
+                local dist = (root.Position - npcRoot.Position).Magnitude
+                if dist <= CONFIG.MAX_TARGET_DISTANCE then
+                    table.insert(State.npcCache, { model = npc, root = npcRoot, humanoid = hum, distance = dist })
+                end
+            end
+        end
+    end
+    table.sort(State.npcCache, function(a, b) return a.distance < b.distance end)
+end
+
+function NPCCache.findClosest()
+    local now = tick()
+    if now - State.lastNPCScan > CONFIG.NPC_SCAN_INTERVAL then
+        NPCCache.updateCache()
+        State.lastNPCScan = now
+    end
+    return State.npcCache[1] and State.npcCache[1].model
+end
+
+function NPCCache.isValid(npc)
+    if not npc or not npc.Parent then return false end
+    local hum = npc:FindFirstChild("Humanoid")
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    if not hum or not npcRoot or hum.Health <= 0 then return false end
+    local root = Utils.getCharComponents()
+    if not root then return false end
+    return (root.Position - npcRoot.Position).Magnitude <= CONFIG.MAX_TARGET_DISTANCE
+end
+
+function NPCCache.getDistance(npc)
+    local root = Utils.getCharComponents()
+    if not root or not npc then return math.huge end
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    if not npcRoot then return math.huge end
+    return (root.Position - npcRoot.Position).Magnitude
+end
+
+-- ESP System
+local ESP = {}
+
+function ESP.createESP(npc)
+    if State.espObjects[npc] then return end
+    if not npc:FindFirstChild("HumanoidRootPart") then return end
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "SimpleHubHighlight"
+    highlight.Adornee = npc
+    highlight.FillColor = Color3.new(1, 0, 0)
+    highlight.OutlineColor = Color3.new(1, 1, 1)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Parent = npc
+    State.espObjects[npc] = highlight
+end
+
+function ESP.removeESP(npc)
+    if State.espObjects[npc] then
+        State.espObjects[npc]:Destroy()
+        State.espObjects[npc] = nil
+    end
+end
+
+function ESP.clearAllESP()
+    for _, esp in pairs(State.espObjects) do
+        if esp then esp:Destroy() end
+    end
+    table.clear(State.espObjects)
+end
+
+function ESP.createTracer(npc)
+    if State.tracerLines[npc] then return end
+    if not npc:FindFirstChild("HumanoidRootPart") then return end
+    local line = Drawing.new("Line")
+    line.Visible = true
+    line.Color = Color3.new(0, 1, 0)
+    line.Thickness = 2
+    line.Transparency = 0.7
+    State.tracerLines[npc] = line
+end
+
+function ESP.updateTracers()
+    if not State.tracersEnabled then return end
+    local camera = workspace.CurrentCamera
+    for npc, line in pairs(State.tracerLines) do
+        if npc and npc.Parent then
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if npcRoot then
+                local npcPos, onScreen = camera:WorldToViewportPoint(npcRoot.Position)
+                local screenSize = camera.ViewportSize
+                if onScreen then
+                    line.From = Vector2.new(screenSize.X / 2, screenSize.Y)
+                    line.To = Vector2.new(npcPos.X, npcPos.Y)
+                    line.Visible = true
+                else
+                    line.Visible = false
+                end
+            else
+                line.Visible = false
+            end
+        else
+            line.Visible = false
+        end
+    end
+end
+
+function ESP.removeTracer(npc)
+    if State.tracerLines[npc] then
+        State.tracerLines[npc]:Remove()
+        State.tracerLines[npc] = nil
+    end
+end
+
+function ESP.clearAllTracers()
+    for _, line in pairs(State.tracerLines) do
+        if line then line:Remove() end
+    end
+    table.clear(State.tracerLines)
+end
+
+function ESP.createHealthBar(npc)
+    if State.healthBarObjects[npc] then return end
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    local npcHum = npc:FindFirstChild("Humanoid")
+    if not npcRoot or not npcHum then return end
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "SimpleHubHealthBar"
+    billboard.Adornee = npcRoot
+    billboard.Size = UDim2.new(4, 0, 0.5, 0)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = npc
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    bg.BorderSizePixel = 0
+    bg.Parent = billboard
+    local bar = Instance.new("Frame")
+    bar.Name = "HealthBar"
+    bar.Size = UDim2.new(npcHum.Health / npcHum.MaxHealth, 0, 1, 0)
+    bar.BackgroundColor3 = Color3.new(0, 1, 0)
+    bar.BorderSizePixel = 0
+    bar.Parent = bg
+    local txt = Instance.new("TextLabel")
+    txt.Name = "HealthText"
+    txt.Size = UDim2.new(1, 0, 1, 0)
+    txt.BackgroundTransparency = 1
+    txt.Text = math.floor(npcHum.Health) .. "/" .. math.floor(npcHum.MaxHealth)
+    txt.TextColor3 = Color3.new(1, 1, 1)
+    txt.TextScaled = true
+    txt.Font = Enum.Font.GothamBold
+    txt.Parent = bg
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 4)
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 4)
+    State.healthBarObjects[npc] = billboard
+end
+
+function ESP.updateHealthBar(npc)
+    local gui = State.healthBarObjects[npc]
+    if not gui then return end
+    local npcHum = npc:FindFirstChild("Humanoid")
+    if not npcHum then return end
+    local frame = gui:FindFirstChild("Frame")
+    local bar = frame and frame:FindFirstChild("HealthBar")
+    local txt = frame and frame:FindFirstChild("HealthText")
+    if not bar or not txt then return end
+    local pct = npcHum.Health / npcHum.MaxHealth
+    bar.Size = UDim2.new(pct, 0, 1, 0)
+    txt.Text = math.floor(npcHum.Health) .. "/" .. math.floor(npcHum.MaxHealth)
+    if pct > 0.5 then bar.BackgroundColor3 = Color3.new(0, 1, 0)
+    elseif pct > 0.25 then bar.BackgroundColor3 = Color3.new(1, 1, 0)
+    else bar.BackgroundColor3 = Color3.new(1, 0, 0) end
+end
+
+function ESP.removeHealthBar(npc)
+    if State.healthBarObjects[npc] then
+        State.healthBarObjects[npc]:Destroy()
+        State.healthBarObjects[npc] = nil
+    end
+end
+
+function ESP.clearAllHealthBars()
+    for _, gui in pairs(State.healthBarObjects) do
+        if gui then gui:Destroy() end
+    end
+    table.clear(State.healthBarObjects)
+end
+
+function ESP.updateVisuals()
+    for _, npc in ipairs(CONFIG.ESP_FOLDER_NPC:GetChildren()) do
+        if npc:IsA("Model") and npc ~= LocalPlayer.Character then
+            local hum = npc:FindFirstChild("Humanoid")
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if hum and npcRoot and hum.Health > 0 then
+                if State.espEnabled then ESP.createESP(npc) else ESP.removeESP(npc) end
+                if State.tracersEnabled then ESP.createTracer(npc) else ESP.removeTracer(npc) end
+                if State.healthBarsEnabled then
+                    ESP.createHealthBar(npc)
+                    ESP.updateHealthBar(npc)
+                else
+                    ESP.removeHealthBar(npc)
+                end
+            else
+                ESP.removeESP(npc); ESP.removeTracer(npc); ESP.removeHealthBar(npc)
+            end
+        end
+    end
+    ESP.updateTracers()
+end
+
+function ESP.updatePlayerESP()
+    if not State.playerESPEnabled then
+        for _, esp in pairs(State.playerESPObjects) do
+            if esp then esp:Destroy() end
+        end
+        table.clear(State.playerESPObjects)
+        return
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local char = plr.Character
+            if not State.playerESPObjects[plr] then
+                local hl = Instance.new("Highlight")
+                hl.Name = "PlayerHighlight"
+                hl.Adornee = char
+                hl.FillColor = Color3.fromRGB(0, 255, 255)
+                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                hl.FillTransparency = 0.7
+                hl.OutlineTransparency = 0
+                hl.Parent = char
+                State.playerESPObjects[plr] = hl
+            end
+        end
+    end
+end
+
+-- Combat System (Kill Aura, Lock On, Autofarm)
+local Combat = {}
+
+function Combat.killAuraLoop()
+    if not State.killAuraEnabled then return end
+    local now = tick()
+    if now - State.lastKillAuraTime < State.killAuraDelay then return end
+    State.lastKillAuraTime = now
+
+    local root = Utils.getCharComponents()
+    if not root then return end
+
+    -- Find closest NPC within range
+    local closestNPC = NPCCache.findClosest()
+    if not closestNPC then return end
+
+    local npcRoot = closestNPC:FindFirstChild("HumanoidRootPart")
+    local npcHum = closestNPC:FindFirstChild("Humanoid")
+    if not npcRoot or not npcHum or npcHum.Health <= 0 then return end
+
+    local distance = (root.Position - npcRoot.Position).Magnitude
+    if distance > CONFIG.MAX_TARGET_DISTANCE then return end
+
+    -- Fire swing remote (assuming no arguments)
+    pcgaul(function()
+        swingRemote:FireServer()
+    end)
+end
+
+function Combat.lockOnLoop()
+    if not State.lockOnEnabled then return end
+    local camera = workspace.CurrentCamera
+    local target = State.lockedTarget
+    if State.autofarmEnabled and State.lockedNPC then
+        target = State.lockedNPC
+    end
+    if not target or not target.Parent then
+        target = NPCCache.findClosest()
+        State.lockedTarget = target
+    end
+    if target then
+        local npcRoot = target:FindFirstChild("HumanoidRootPart")
+        if npcRoot then
+            camera.CFrame = CFrame.new(camera.CFrame.Position, npcRoot.Position)
+        end
+    end
+end
+
+function Combat.autofarmLoop()
+    if not State.autofarmEnabled then return end
+    local root = Utils.getCharComponents()
+    if not root then return end
+    if not NPCCache.isValid(State.lockedNPC) then
+        State.lockedNPC = NPCCache.findClosest()
+    end
+    local npc = State.lockedNPC
+    if not npc then return end
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    if not npcRoot then State.lockedNPC = nil; return end
+
+    root.AssemblyLinearVelocity = Vector3.zero
+    root.AssemblyAngularVelocity = Vector3.zero
+
+    if State.autofarmMode == "Above" then
+        local targetPos = npcRoot.Position + Vector3.new(0, State.autofarmDistance, 0)
+        root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+    else
+        local backVec = -npcRoot.CFrame.LookVector * State.autofarmDistance
+        local upVec = Vector3.new(0, 2.5, 0)
+        local targetPos = npcRoot.Position + backVec + upVec
+        root.CFrame = CFrame.new(targetPos, npcRoot.Position)
+    end
+end
+
+function Combat.speedLoop()
+    if not State.speedEnabled then return end
+    local root, hum = Utils.getCharComponents()
+    if root and hum then
+        local moveDir = hum.MoveDirection
+        if moveDir.Magnitude > 0 then
+            local curY = root.AssemblyLinearVelocity.Y
+            root.AssemblyLinearVelocity = (moveDir.Unit * State.speedValue) + Vector3.new(0, curY, 0)
+        end
+    end
+end
+
+-- Movement System (NoClip)
+local Movement = {}
+
+function Movement.enableNoClip()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
+    end
+end
+
+function Movement.disableNoClip()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.CanCollide = true
+        end
+    end
+end
+
+-- Teleport System
+local Teleport = {}
+
+function Teleport.ultraSmoothTeleport(targetPosition)
+    if State.isTeleporting then return false end
+    local root = Utils.getCharComponents()
+    if not root then return false end
+    State.isTeleporting = true
+    local startPos = root.Position
+    local distance = (targetPosition - startPos).Magnitude
+    if distance < 10 or State.teleportMode == "Direct" then
+        root.CFrame = CFrame.new(targetPosition)
+        State.isTeleporting = false
+        return true
+    end
+    if distance > CONFIG.MAX_TELEPORT_DISTANCE then
+        local direction = (targetPosition - startPos).Unit
+        local numChunks = math.ceil(distance / CONFIG.MAX_TELEPORT_DISTANCE)
+        for i = 1, numChunks do
+            if not State.isTeleporting then break end
+            local chunkTarget = (i == numChunks) and targetPosition or (startPos + direction * CONFIG.MAX_TELEPORT_DISTANCE * i)
+            local chunkTime = (chunkTarget - root.Position).Magnitude / CONFIG.TELEPORT_SPEED
+            local tween = TweenService:Create(root, TweenInfo.new(chunkTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { CFrame = CFrame.new(chunkTarget) })
+            tween:Play()
+            tween.Completed:Wait()
+            task.wait(0.1)
+        end
+    else
+        local travelTime = distance / CONFIG.TELEPORT_SPEED
+        local tween = TweenService:Create(root, TweenInfo.new(travelTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { CFrame = CFrame.new(targetPosition) })
+        tween:Play()
+        tween.Completed:Wait()
+    end
+    State.isTeleporting = false
+    return true
+end
+
+function Teleport.safeTeleportToNPC(npcName)
+    local root = Utils.getCharComponents()
+    if not root then return false, "Character not found" end
+    for _, npc in ipairs(CONFIG.TELEPORT_FOLDER_NPC:GetChildren()) do
+        if npc.Name == npcName and npc:IsA("Model") then
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if npcRoot then
+                task.spawn(function() Teleport.ultraSmoothTeleport(npcRoot.Position + Vector3.new(0, 2, 5)) end)
+                return true, "Teleporting..."
+            end
+        end
+    end
+    return false, "NPC not found"
+end
+
+function Teleport.safeTeleportToPlayer(playerName)
+    local root = Utils.getCharComponents()
+    if not root then return false, "Character not found" end
+    local targetPlayer = Players:FindFirstChild(playerName)
+    if targetPlayer and targetPlayer.Character then
+        local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            task.spawn(function() Teleport.ultraSmoothTeleport(targetRoot.Position + Vector3.new(0, 2, 5)) end)
+            return true, "Teleporting..."
+        end
+    end
+    return false, "Player not found"
+end
+
+function Teleport.getNPCList()
+    local list = {}
+    for _, npc in ipairs(CONFIG.TELEPORT_FOLDER_NPC:GetChildren()) do
+        if npc:IsA("Model") and npc:FindFirstChild("HumanoidRootPart") and not table.find(list, npc.Name) then
+            table.insert(list, npc.Name)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+function Teleport.getPlayerList()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(list, plr.Name)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+-- GUI System
+local GUI = {}
+local screenGui, mainFrame
+local toggleRefs = {}
+local resizeActive, resizeStartPos, resizeStartSize
+
+local function createSectionHeader(parent, text)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 28)
+    frame.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -15, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 11
+    label.TextColor3 = Color3.fromRGB(180, 180, 200)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    return frame
+end
+
+local function createToggle(parent, labelText, descText, defaultState)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, descText and 55 or 40)
+    container.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    container.BorderSizePixel = 0
+    container.Parent = parent
+    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 6)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, -10, 0, 20)
+    label.Position = UDim2.new(0, 10, 0, descText and 8 or 10)
+    label.BackgroundTransparency = 1
+    label.Text = labelText
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 12
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+    if descText then
+        local desc = Instance.new("TextLabel")
+        desc.Size = UDim2.new(1, -20, 0, 18)
+        desc.Position = UDim2.new(0, 10, 0, 28)
+        desc.BackgroundTransparency = 1
+        desc.Text = descText
+        desc.Font = Enum.Font.Gotham
+        desc.TextSize = 9
+        desc.TextColor3 = Color3.fromRGB(120, 120, 140)
+        desc.TextWrapped = true
+        desc.Parent = container
+    end
+    local toggleBg = Instance.new("Frame")
+    toggleBg.Size = UDim2.new(0, 38, 0, 20)
+    toggleBg.Position = UDim2.new(1, -45, 0, 10)
+    toggleBg.BackgroundColor3 = defaultState and Color3.fromRGB(100, 180, 255) or Color3.fromRGB(40, 40, 55)
+    toggleBg.BorderSizePixel = 0
+    toggleBg.Parent = container
+    Instance.new("UICorner", toggleBg).CornerRadius = UDim.new(1, 0)
+    local toggleCircle = Instance.new("Frame")
+    toggleCircle.Size = UDim2.new(0, 16, 0, 16)
+    toggleCircle.Position = defaultState and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    toggleCircle.BackgroundColor3 = Color3.new(1, 1, 1)
+    toggleCircle.BorderSizePixel = 0
+    toggleCircle.Parent = toggleBg
+    Instance.new("UICorner", toggleCircle).CornerRadius = UDim.new(1, 0)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = toggleBg
+    return container, btn, toggleBg, toggleCircle
+end
+
+local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 50)
+    container.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    container.BorderSizePixel = 0
+    container.Parent = parent
+    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 6)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 0, 18)
+    label.Position = UDim2.new(0, 10, 0, 8)
+    label.BackgroundTransparency = 1
+    label.Text = labelText
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 11
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0, 50, 0, 18)
+    valueLabel.Position = UDim2.new(1, -55, 0, 8)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = tostring(defaultVal)
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextSize = 11
+    valueLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = container
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(1, -20, 0, 4)
+    sliderBg.Position = UDim2.new(0, 10, 1, -15)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = container
+    Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
+    fill.BorderSizePixel = 0
+    fill.Parent = sliderBg
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+    local sliderBtn = Instance.new("TextButton")
+    sliderBtn.Size = UDim2.new(1, 0, 1, 10)
+    sliderBtn.Position = UDim2.new(0, 0, 0, -5)
+    sliderBtn.BackgroundTransparency = 1
+    sliderBtn.Text = ""
+    sliderBtn.Parent = sliderBg
+    return container, sliderBtn, fill, valueLabel, minVal, maxVal
+end
+
+local function handleSlider(btn, fill, label, minV, maxV, precision, callback)
+    local dragging = false
+    btn.MouseButton1Down:Connect(function() dragging = true end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local sliderBg = btn.Parent
+            local mouseX = UserInputService:GetMouseLocation().X
+            local pct = math.clamp((mouseX - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+            local value = minV + pct * (maxV - minV)
+            value = math.floor(value * precision) / precision
+            label.Text = tostring(value)
+            fill.Size = UDim2.new(pct, 0, 1, 0)
+            if callback then callback(value) end
+        end
+    end)
+end
+
+local function makeResizable(frame)
+    local grip = Instance.new("Frame")
+    grip.Size = UDim2.new(0, 8, 0, 8)
+    grip.Position = UDim2.new(1, -8, 1, -8)
+    grip.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    grip.BackgroundTransparency = 0.5
+    grip.BorderSizePixel = 0
+    grip.Parent = frame
+    Instance.new("UICorner", grip).CornerRadius = UDim.new(0, 2)
+    grip.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            resizeActive = true
+            resizeStartPos = UserInputService:GetMouseLocation()
+            resizeStartSize = frame.AbsoluteSize
+            local conn
+            conn = input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    resizeActive = false
+                    conn:Disconnect()
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if resizeActive and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = UserInputService:GetMouseLocation() - resizeStartPos
+            local newWidth = math.max(CONFIG.GUI_MIN_SIZE.X, resizeStartSize.X + delta.X)
+            local newHeight = math.max(CONFIG.GUI_MIN_SIZE.Y, resizeStartSize.Y + delta.Y)
+            frame.Size = UDim2.new(0, newWidth, 0, newHeight)
+        end
+    end)
+end
+
+function GUI.build()
+    screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "SimpleHub"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.Parent = CoreGui
+
+    mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, CONFIG.GUI_DEFAULT_SIZE.X, 0, CONFIG.GUI_DEFAULT_SIZE.Y)
+    mainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(13, 13, 18)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = screenGui
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+    local stroke = Instance.new("UIStroke", mainFrame)
+    stroke.Color = Color3.fromRGB(100, 100, 120)
+    stroke.Thickness = 1
+    stroke.Transparency = 0.6
+    makeResizable(mainFrame)
+
+    -- Header
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 40)
+    header.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    header.BorderSizePixel = 0
+    header.Parent = mainFrame
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
+    local title = Instance.new("TextLabel", header)
+    title.Size = UDim2.new(1, -50, 1, 0)
+    title.Position = UDim2.new(0, 15, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "✦ SIMPLE HUB ✦"
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 13
+    title.TextColor3 = Color3.fromRGB(100, 180, 255)
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    local closeBtn = Instance.new("TextButton", header)
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -38, 0, 6)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    closeBtn.Text = "✕"
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.AutoButtonColor = false
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+        for _, conn in pairs(State.connections) do
+            if conn then pcall(conn.Disconnect, conn) end
+        end
+    end)
+
+    -- Sidebar
+    local sidebar = Instance.new("Frame")
+    sidebar.Size = UDim2.new(0, 45, 1, -45)
+    sidebar.Position = UDim2.new(0, 5, 0, 43)
+    sidebar.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    sidebar.BorderSizePixel = 0
+    sidebar.Parent = mainFrame
+    Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0, 6)
+    local sidebarLayout = Instance.new("UIListLayout", sidebar)
+    sidebarLayout.Padding = UDim.new(0, 5)
+    sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    Instance.new("UIPadding", sidebar).PaddingTop = UDim.new(0, 8)
+
+    -- Pages container
+    local contentArea = Instance.new("Frame")
+    contentArea.Size = UDim2.new(1, -60, 1, -45)
+    contentArea.Position = UDim2.new(0, 55, 0, 43)
+    contentArea.BackgroundTransparency = 1
+    contentArea.Parent = mainFrame
+
+    -- Create pages
+    local pages = {}
+    local function createPage(name)
+        local page = Instance.new("ScrollingFrame")
+        page.Name = name
+        page.Size = UDim2.new(1, -5, 1, 0)
+        page.BackgroundTransparency = 1
+        page.BorderSizePixel = 0
+        page.ScrollBarThickness = 3
+        page.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
+        page.CanvasSize = UDim2.new(0, 0, 0, 0)
+        page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        page.Visible = false
+        page.Parent = contentArea
+        local layout = Instance.new("UIListLayout", page)
+        layout.Padding = UDim.new(0, 8)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        Instance.new("UIPadding", page).PaddingRight = UDim.new(0, 5)
+        return page
+    end
+
+    local combatPage = createPage("CombatPage")
+    local visualPage = createPage("VisualPage")
+    local teleportPage = createPage("TeleportPage")
+    local miscPage = createPage("MiscPage")
+
+    local allPages = { combatPage, visualPage, teleportPage, miscPage }
+
+    -- Sidebar buttons
+    local function createSidebarBtn(parent, icon, page)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 35, 0, 35)
+        btn.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+        btn.Text = icon
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 16
+        btn.TextColor3 = Color3.fromRGB(120, 120, 140)
+        btn.BorderSizePixel = 0
+        btn.AutoButtonColor = false
+        btn.Parent = parent
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+        btn.MouseButton1Click:Connect(function()
+            for _, p in ipairs(allPages) do p.Visible = false end
+            for _, b in ipairs(sidebar:GetChildren()) do
+                if b:IsA("TextButton") then
+                    b.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+                    b.TextColor3 = Color3.fromRGB(120, 120, 140)
+                end
+            end
+            page.Visible = true
+            btn.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
+            btn.TextColor3 = Color3.new(1, 1, 1)
+        end)
+        return btn
+    end
+
+    createSidebarBtn(sidebar, "⚔", combatPage)
+    createSidebarBtn(sidebar, "👁", visualPage)
+    createSidebarBtn(sidebar, "📍", teleportPage)
+    createSidebarBtn(sidebar, "🔧", miscPage)
+
+    -- Activate first page
+    combatPage.Visible = true
+    if sidebar:FindFirstChildOfClass("TextButton") then
+        local firstBtn = sidebar:FindFirstChildOfClass("TextButton")
+        firstBtn.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
+        firstBtn.TextColor3 = Color3.new(1, 1, 1)
+    end
+
+    -- ============= COMBAT PAGE =============
+    createSectionHeader(combatPage, "Kill Aura")
+    local _, killAuraToggle, killAuraBg, killAuraCircle = createToggle(combatPage, "Kill Aura", "Attack nearest NPC using Swing remote", false)
+    local _, killAuraDelaySlider, killAuraDelayFill, killAuraDelayLabel, killAuraMin, killAuraMax = createSlider(combatPage, "Aura Delay", 0.1, 2, State.killAuraDelay)
+
+    createSectionHeader(combatPage, "Auto Farm")
+    local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(combatPage, "Auto Farm", "Farm nearest NPC", false)
+    local modeFrame = Instance.new("Frame", combatPage)
+    modeFrame.Size = UDim2.new(1, 0, 0, 50)
+    modeFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    modeFrame.BorderSizePixel = 0
+    Instance.new("UICorner", modeFrame).CornerRadius = UDim.new(0, 6)
+    local modeLabel = Instance.new("TextLabel", modeFrame)
+    modeLabel.Size = UDim2.new(1, -20, 0, 18)
+    modeLabel.Position = UDim2.new(0, 10, 0, 6)
+    modeLabel.BackgroundTransparency = 1
+    modeLabel.Text = "Farm Position"
+    modeLabel.Font = Enum.Font.GothamBold
+    modeLabel.TextSize = 11
+    modeLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    modeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    local modeBtns = Instance.new("Frame", modeFrame)
+    modeBtns.Size = UDim2.new(1, -20, 0, 30)
+    modeBtns.Position = UDim2.new(0, 10, 0, 22)
+    modeBtns.BackgroundTransparency = 1
+    local modeBtnLayout = Instance.new("UIListLayout", modeBtns)
+    modeBtnLayout.FillDirection = Enum.FillDirection.Horizontal
+    modeBtnLayout.Padding = UDim.new(0, 8)
+    local function createModeBtn(text)
+        local btn = Instance.new("TextButton", modeBtns)
+        btn.Size = UDim2.new(0, 130, 0, 28)
+        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+        btn.Text = text
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 11
+        btn.TextColor3 = Color3.fromRGB(180, 180, 200)
+        btn.BorderSizePixel = 0
+        btn.AutoButtonColor = false
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+        return btn
+    end
+    local behindBtn = createModeBtn("Behind")
+    local aboveBtn = createModeBtn("Above")
+    local function updateAutofarmModeVisuals()
+        local isBehind = State.autofarmMode == "Behind"
+        behindBtn.BackgroundColor3 = isBehind and Color3.fromRGB(100, 180, 255) or Color3.fromRGB(40, 40, 55)
+        behindBtn.TextColor3 = isBehind and Color3.new(1, 1, 1) or Color3.fromRGB(180, 180, 200)
+        aboveBtn.BackgroundColor3 = isBehind and Color3.fromRGB(40, 40, 55) or Color3.fromRGB(100, 180, 255)
+        aboveBtn.TextColor3 = isBehind and Color3.fromRGB(180, 180, 200) or Color3.new(1, 1, 1)
+    end
+    behindBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Behind"; updateAutofarmModeVisuals() end)
+    aboveBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Above"; updateAutofarmModeVisuals() end)
+    updateAutofarmModeVisuals()
+
+    local _, autofarmDistSlider, autofarmDistFill, autofarmDistLabel, afMin, afMax = createSlider(combatPage, "Farm Distance", 1, 25, State.autofarmDistance)
+
+    createSectionHeader(combatPage, "Lock On")
+    local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Camera follows target", false)
+
+    createSectionHeader(combatPage, "Movement")
+    local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "Increase movement speed", false)
+    local _, speedValSlider, speedValFill, speedValLabel, spMin, spMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
+    local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "Jump infinitely", false)
+
+    -- ============= VISUAL PAGE =============
+    createSectionHeader(visualPage, "NPC Visuals")
+    local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "Highlight NPCs", false)
+    local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "Lines to NPCs", false)
+    local _, healthBarsToggle, healthBarsBg, healthBarsCircle = createToggle(visualPage, "Health Bars", "Show NPC health", false)
+    createSectionHeader(visualPage, "Player Visuals")
+    local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "Highlight other players", false)
+
+    -- ============= TELEPORT PAGE =============
+    createSectionHeader(teleportPage, "Teleport Mode")
+    local modeContainer = Instance.new("Frame", teleportPage)
+    modeContainer.Size = UDim2.new(1, 0, 0, 40)
+    modeContainer.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    modeContainer.BorderSizePixel = 0
+    Instance.new("UICorner", modeContainer).CornerRadius = UDim.new(0, 6)
+    local modeLabel2 = Instance.new("TextLabel", modeContainer)
+    modeLabel2.Size = UDim2.new(0, 100, 1, 0)
+    modeLabel2.Position = UDim2.new(0, 10, 0, 0)
+    modeLabel2.BackgroundTransparency = 1
+    modeLabel2.Text = "Teleport Style:"
+    modeLabel2.Font = Enum.Font.GothamBold
+    modeLabel2.TextSize = 11
+    modeLabel2.TextColor3 = Color3.new(1, 1, 1)
+    modeLabel2.TextXAlignment = Enum.TextXAlignment.Left
+    local smoothBtn = Instance.new("TextButton", modeContainer)
+    smoothBtn.Size = UDim2.new(0, 90, 0, 28)
+    smoothBtn.Position = UDim2.new(0, 110, 0.5, -14)
+    smoothBtn.Text = "Smooth"
+    smoothBtn.Font = Enum.Font.GothamBold
+    smoothBtn.TextSize = 11
+    smoothBtn.BorderSizePixel = 0
+    smoothBtn.AutoButtonColor = false
+    Instance.new("UICorner", smoothBtn).CornerRadius = UDim.new(0, 6)
+    local directBtn = Instance.new("TextButton", modeContainer)
+    directBtn.Size = UDim2.new(0, 90, 0, 28)
+    directBtn.Position = UDim2.new(0, 210, 0.5, -14)
+    directBtn.Text = "Direct"
+    directBtn.Font = Enum.Font.GothamBold
+    directBtn.TextSize = 11
+    directBtn.BorderSizePixel = 0
+    directBtn.AutoButtonColor = false
+    Instance.new("UICorner", directBtn).CornerRadius = UDim.new(0, 6)
+    local function updateTeleportModeVisuals()
+        local isSmooth = State.teleportMode == "Smooth"
+        smoothBtn.BackgroundColor3 = isSmooth and Color3.fromRGB(100, 180, 255) or Color3.fromRGB(40, 40, 55)
+        smoothBtn.TextColor3 = isSmooth and Color3.new(1, 1, 1) or Color3.fromRGB(180, 180, 200)
+        directBtn.BackgroundColor3 = isSmooth and Color3.fromRGB(40, 40, 55) or Color3.fromRGB(100, 180, 255)
+        directBtn.TextColor3 = isSmooth and Color3.fromRGB(180, 180, 200) or Color3.new(1, 1, 1)
+    end
+    smoothBtn.MouseButton1Click:Connect(function() State.teleportMode = "Smooth"; updateTeleportModeVisuals() end)
+    directBtn.MouseButton1Click:Connect(function() State.teleportMode = "Direct"; updateTeleportModeVisuals() end)
+    updateTeleportModeVisuals()
+
+    -- NPC Teleport list
+    createSectionHeader(teleportPage, "Teleport to NPC")
+    local npcRefreshBtn = Instance.new("TextButton", teleportPage)
+    npcRefreshBtn.Size = UDim2.new(1, 0, 0, 30)
+    npcRefreshBtn.Text = "🔄 Refresh NPC List"
+    npcRefreshBtn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+    npcRefreshBtn.BorderSizePixel = 0
+    Instance.new("UICorner", npcRefreshBtn).CornerRadius = UDim.new(0, 6)
+    local npcListFrame = Instance.new("ScrollingFrame", teleportPage)
+    npcListFrame.Size = UDim2.new(1, 0, 0, 150)
+    npcListFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    npcListFrame.BorderSizePixel = 0
+    npcListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    npcListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    npcListFrame.ScrollBarThickness = 3
+    local npcListLayout = Instance.new("UIListLayout", npcListFrame)
+    npcListLayout.Padding = UDim.new(0, 4)
+
+    local function populateNPCList()
+        for _, child in ipairs(npcListFrame:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        for _, name in ipairs(Teleport.getNPCList()) do
+            local btn = Instance.new("TextButton", npcListFrame)
+            btn.Size = UDim2.new(1, -10, 0, 28)
+            btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+            btn.Text = "   📌 " .. name
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 11
+            btn.TextColor3 = Color3.new(1, 1, 1)
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.BorderSizePixel = 0
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+            btn.MouseButton1Click:Connect(function()
+                Teleport.safeTeleportToNPC(name)
+            end)
+        end
+        npcListFrame.CanvasSize = UDim2.new(0, 0, 0, #Teleport.getNPCList() * 32 + 10)
+    end
+    npcRefreshBtn.MouseButton1Click:Connect(populateNPCList)
+    task.spawn(populateNPCList)
+
+    -- Player Teleport list
+    createSectionHeader(teleportPage, "Teleport to Player")
+    local playerRefreshBtn = Instance.new("TextButton", teleportPage)
+    playerRefreshBtn.Size = UDim2.new(1, 0, 0, 30)
+    playerRefreshBtn.Text = "🔄 Refresh Player List"
+    playerRefreshBtn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+    playerRefreshBtn.BorderSizePixel = 0
+    Instance.new("UICorner", playerRefreshBtn).CornerRadius = UDim.new(0, 6)
+    local playerListFrame = Instance.new("ScrollingFrame", teleportPage)
+    playerListFrame.Size = UDim2.new(1, 0, 0, 150)
+    playerListFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    playerListFrame.BorderSizePixel = 0
+    playerListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    playerListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    playerListFrame.ScrollBarThickness = 3
+    local playerListLayout = Instance.new("UIListLayout", playerListFrame)
+    playerListLayout.Padding = UDim.new(0, 4)
+
+    local function populatePlayerList()
+        for _, child in ipairs(playerListFrame:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        for _, name in ipairs(Teleport.getPlayerList()) do
+            local btn = Instance.new("TextButton", playerListFrame)
+            btn.Size = UDim2.new(1, -10, 0, 28)
+            btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+            btn.Text = "   👤 " .. name
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 11
+            btn.TextColor3 = Color3.new(1, 1, 1)
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.BorderSizePixel = 0
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+            btn.MouseButton1Click:Connect(function()
+                Teleport.safeTeleportToPlayer(name)
+            end)
+        end
+        playerListFrame.CanvasSize = UDim2.new(0, 0, 0, #Teleport.getPlayerList() * 32 + 10)
+    end
+    playerRefreshBtn.MouseButton1Click:Connect(populatePlayerList)
+    task.spawn(populatePlayerList)
+
+    -- ============= MISC PAGE =============
+    createSectionHeader(miscPage, "Misc")
+    local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", false)
+
+    -- ======= TOGGLE FUNCTIONS =======
+    local function setKillAura(enabled)
+        State.killAuraEnabled = enabled
+        Utils.animateToggle(killAuraBg, killAuraCircle, enabled)
+        if enabled then
+            Utils.disconnectConnection("killAura")
+            State.connections.killAura = RunService.Heartbeat:Connect(Combat.killAuraLoop)
+        else
+            Utils.disconnectConnection("killAura")
+        end
+    end
+    killAuraToggle.MouseButton1Click:Connect(function() setKillAura(not State.killAuraEnabled) end)
+
+    local function setAutofarm(enabled)
+        State.autofarmEnabled = enabled
+        Utils.animateToggle(autofarmBg, autofarmCircle, enabled)
+        if enabled then
+            Utils.disconnectConnection("autofarm")
+            State.connections.autofarm = RunService.Heartbeat:Connect(Combat.autofarmLoop)
+        else
+            Utils.disconnectConnection("autofarm")
+            State.lockedNPC = nil
+        end
+    end
+    autofarmToggle.MouseButton1Click:Connect(function() setAutofarm(not State.autofarmEnabled) end)
+
+    local function setLockOn(enabled)
+        State.lockOnEnabled = enabled
+        Utils.animateToggle(lockOnBg, lockOnCircle, enabled)
+        if enabled then
+            Utils.disconnectConnection("lockOn")
+            State.connections.lockOn = RunService.RenderStepped:Connect(Combat.lockOnLoop)
+        else
+            Utils.disconnectConnection("lockOn")
+            State.lockedTarget = nil
+        end
+    end
+    lockOnToggle.MouseButton1Click:Connect(function() setLockOn(not State.lockOnEnabled) end)
+
+    local function setSpeed(enabled)
+        State.speedEnabled = enabled
+        Utils.animateToggle(speedBg, speedCircle, enabled)
+        if enabled then
+            Utils.disconnectConnection("speed")
+            State.connections.speed = RunService.Heartbeat:Connect(Combat.speedLoop)
+        else
+            Utils.disconnectConnection("speed")
+        end
+    end
+    speedToggle.MouseButton1Click:Connect(function() setSpeed(not State.speedEnabled) end)
+
+    local function setInfiniteJump(enabled)
+        State.infiniteJumpEnabled = enabled
+        Utils.animateToggle(jumpBg, jumpCircle, enabled)
+    end
+    jumpToggle.MouseButton1Click:Connect(function() setInfiniteJump(not State.infiniteJumpEnabled) end)
+
+    local function setESP(enabled)
+        State.espEnabled = enabled
+        Utils.animateToggle(espBg, espCircle, enabled)
+        if not enabled then ESP.clearAllESP() end
+    end
+    espToggle.MouseButton1Click:Connect(function() setESP(not State.espEnabled) end)
+
+    local function setTracers(enabled)
+        State.tracersEnabled = enabled
+        Utils.animateToggle(tracersBg, tracersCircle, enabled)
+        if not enabled then ESP.clearAllTracers() end
+    end
+    tracersToggle.MouseButton1Click:Connect(function() setTracers(not State.tracersEnabled) end)
+
+    local function setHealthBars(enabled)
+        State.healthBarsEnabled = enabled
+        Utils.animateToggle(healthBarsBg, healthBarsCircle, enabled)
+        if not enabled then ESP.clearAllHealthBars() end
+    end
+    healthBarsToggle.MouseButton1Click:Connect(function() setHealthBars(not State.healthBarsEnabled) end)
+
+    local function setPlayerESP(enabled)
+        State.playerESPEnabled = enabled
+        Utils.animateToggle(playerESPBg, playerESPCircle, enabled)
+    end
+    playerESPToggle.MouseButton1Click:Connect(function() setPlayerESP(not State.playerESPEnabled) end)
+
+    local function setNoClip(enabled)
+        State.noClipEnabled = enabled
+        Utils.animateToggle(noClipBg, noClipCircle, enabled)
+        if enabled then
+            Movement.enableNoClip()
+            Utils.disconnectConnection("noClip")
+            State.connections.noClip = RunService.Heartbeat:Connect(function()
+                if State.noClipEnabled then Movement.enableNoClip() end
+            end)
+        else
+            Movement.disableNoClip()
+            Utils.disconnectConnection("noClip")
+        end
+    end
+    noClipToggle.MouseButton1Click:Connect(function() setNoClip(not State.noClipEnabled) end)
+
+    -- Slider handlers
+    handleSlider(killAuraDelaySlider, killAuraDelayFill, killAuraDelayLabel, killAuraMin, killAuraMax, 10, function(v) State.killAuraDelay = v end)
+    handleSlider(autofarmDistSlider, autofarmDistFill, autofarmDistLabel, afMin, afMax, 10, function(v) State.autofarmDistance = v end)
+    handleSlider(speedValSlider, speedValFill, speedValLabel, spMin, spMax, 1, function(v) State.speedValue = v end)
+
+    -- Toggle refs for later (if needed)
+    toggleRefs = {
+        killAura = { bg = killAuraBg, circle = killAuraCircle },
+        autofarm = { bg = autofarmBg, circle = autofarmCircle },
+        lockOn = { bg = lockOnBg, circle = lockOnCircle },
+        speed = { bg = speedBg, circle = speedCircle },
+        infiniteJump = { bg = jumpBg, circle = jumpCircle },
+        esp = { bg = espBg, circle = espCircle },
+        tracers = { bg = tracersBg, circle = tracersCircle },
+        healthBars = { bg = healthBarsBg, circle = healthBarsCircle },
+        playerESP = { bg = playerESPBg, circle = playerESPCircle },
+        noClip = { bg = noClipBg, circle = noClipCircle },
+    }
+
+    return screenGui, mainFrame
+end
+
+-- Input System
+local function initInput()
+    UserInputService.JumpRequest:Connect(function()
+        if State.infiniteJumpEnabled then
+            local _, hum = Utils.getCharComponents()
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end)
+
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == Enum.KeyCode.F1 then
+            mainFrame.Visible = not mainFrame.Visible
+        elseif input.KeyCode == Enum.KeyCode.F2 then
+            -- toggle kill aura
+            if toggleRefs.killAura then
+                local newState = not State.killAuraEnabled
+                State.killAuraEnabled = newState
+                Utils.animateToggle(toggleRefs.killAura.bg, toggleRefs.killAura.circle, newState)
+                if newState then
+                    Utils.disconnectConnection("killAura")
+                    State.connections.killAura = RunService.Heartbeat:Connect(Combat.killAuraLoop)
+                else
+                    Utils.disconnectConnection("killAura")
+                end
+            end
+        elseif input.KeyCode == Enum.KeyCode.F3 then
+            -- toggle autofarm
+            if toggleRefs.autofarm then
+                local newState = not State.autofarmEnabled
+                State.autofarmEnabled = newState
+                Utils.animateToggle(toggleRefs.autofarm.bg, toggleRefs.autofarm.circle, newState)
+                if newState then
+                    Utils.disconnectConnection("autofarm")
+                    State.connections.autofarm = RunService.Heartbeat:Connect(Combat.autofarmLoop)
+                else
+                    Utils.disconnectConnection("autofarm")
+                    State.lockedNPC = nil
+                end
+            end
+        elseif input.KeyCode == Enum.KeyCode.KeypadOne then
+            if toggleRefs.speed then
+                local newState = not State.speedEnabled
+                State.speedEnabled = newState
+                Utils.animateToggle(toggleRefs.speed.bg, toggleRefs.speed.circle, newState)
+                if newState then
+                    Utils.disconnectConnection("speed")
+                    State.connections.speed = RunService.Heartbeat:Connect(Combat.speedLoop)
+                else
+                    Utils.disconnectConnection("speed")
+                end
+            end
+        elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
+            local newState = not State.infiniteJumpEnabled
+            State.infiniteJumpEnabled = newState
+            Utils.animateToggle(toggleRefs.infiniteJump.bg, toggleRefs.infiniteJump.circle, newState)
+        elseif input.KeyCode == Enum.KeyCode.KeypadZero then
+            if toggleRefs.esp then
+                local newState = not State.espEnabled
+                State.espEnabled = newState
+                Utils.animateToggle(toggleRefs.esp.bg, toggleRefs.esp.circle, newState)
+                if not newState then ESP.clearAllESP() end
+            end
+        end
+    end)
+
+    LocalPlayer.CharacterAdded:Connect(function()
+        Utils.invalidateCharCache()
+        task.wait(0.3)
+        if State.speedEnabled then
+            Utils.disconnectConnection("speed")
+            State.connections.speed = RunService.Heartbeat:Connect(Combat.speedLoop)
+        end
+        if State.killAuraEnabled then
+            Utils.disconnectConnection("killAura")
+            State.connections.killAura = RunService.Heartbeat:Connect(Combat.killAuraLoop)
+        end
+        if State.autofarmEnabled then
+            Utils.disconnectConnection("autofarm")
+            State.connections.autofarm = RunService.Heartbeat:Connect(Combat.autofarmLoop)
+        end
+        if State.lockOnEnabled then
+            Utils.disconnectConnection("lockOn")
+            State.connections.lockOn = RunService.RenderStepped:Connect(Combat.lockOnLoop)
+        end
+        if State.noClipEnabled then
+            Utils.disconnectConnection("noClip")
+            State.connections.noClip = RunService.Heartbeat:Connect(function()
+                if State.noClipEnabled then Movement.enableNoClip() end
+            end)
+        end
+    end)
+end
+
+-- Build GUI
+local guiResult = GUI.build()
+screenGui = guiResult[1]
+mainFrame = guiResult[2]
+
+-- Init input
+initInput()
+
+-- Visual update loop
+State.connections.visualUpdate = RunService.RenderStepped:Connect(function()
+    ESP.updateVisuals()
+    ESP.updatePlayerESP()
+end)
+
+-- Cleanup on GUI destruction
+screenGui.Destroying:Connect(function()
+    for _, conn in pairs(State.connections) do
+        if conn then pcall(conn.Disconnect, conn) end
+    end
+    ESP.clearAllESP()
+    ESP.clearAllTracers()
+    ESP.clearAllHealthBars()
+    for _, esp in pairs(State.playerESPObjects) do
+        if esp then esp:Destroy() end
+    end
+end)
+
+print("═══════════════════════════════════════════════")
+print("     SIMPLE HUB - ADVANCED EDITION            ")
+print("═══════════════════════════════════════════════")
+print("  ⚔️  Kill Aura (delay slider) + Auto Farm    ")
+print("  👁️  ESP, Tracers, Health Bars (NPC & Player)")
+print("  📍  Teleport (Smooth/Direct, NPC & Player)  ")
+print("  🚀  Speed, Infinite Jump, No Clip           ")
+print("  🔒  Lock On targeting                       ")
+print("  🖱️  Resizable & Draggable Window            ")
+print("═══════════════════════════════════════════════")
