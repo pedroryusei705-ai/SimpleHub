@@ -1,5 +1,5 @@
 --//====================================================--
---//         SIMPLE HUB - ADVANCED EDITION             --//
+--//         SIMPLE HUB - ADVANCED EDITION FIXED       --//
 --//====================================================--
 --//  Kill Aura + Speed + Infinite Jump                --//
 --//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --//
@@ -17,24 +17,23 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Wait for remote
+-- Remote (altere o caminho se necessário)
 local swingRemote = ReplicatedStorage:WaitForChild("RsPackage"):WaitForChild("Swing")
 
--- Helper to get folders safely (won't hang)
+-- Função auxiliar para obter a pasta com fallback
 local function getFolderSafe(parent, name)
 	local folder = parent:FindFirstChild(name)
 	if not folder then
-		warn("Folder '" .. name .. "' not found. Using parent as fallback.")
+		warn("Pasta '" .. name .. "' não encontrada. Usando o pai como fallback.")
 		return parent
 	end
 	return folder
 end
 
--- NPC folders (attempt to use "Humanoids", else workspace)
 local npcESP_Folder = getFolderSafe(workspace, "Humanoids")
 local npcTeleport_Folder = getFolderSafe(workspace, "Humanoids")
 
--- Constants
+-- Constantes
 local CONFIG = {
 	TELEPORT_SPEED          = 150,
 	MAX_TELEPORT_DISTANCE   = 500,
@@ -49,14 +48,12 @@ local CONFIG = {
 	TELEPORT_FOLDER_PLAYER  = workspace,
 }
 
--- State
+-- Estado global
 local State = {
-	-- existing
 	speedEnabled        = false,
 	speedValue          = 160,
 	infiniteJumpEnabled = false,
 
-	-- new features
 	killAuraEnabled     = false,
 	killAuraDelay       = 0.3,
 	lastKillAuraTime    = 0,
@@ -65,7 +62,7 @@ local State = {
 	lockedTarget        = nil,
 
 	autofarmEnabled     = false,
-	autofarmMode        = "Behind", -- "Behind" or "Above"
+	autofarmMode        = "Behind",  -- "Behind" ou "Above"
 	autofarmDistance    = 8,
 	lockedNPC           = nil,
 
@@ -74,7 +71,7 @@ local State = {
 	healthBarsEnabled   = false,
 	playerESPEnabled    = false,
 
-	teleportMode        = "Smooth", -- "Smooth" or "Direct"
+	teleportMode        = "Smooth",  -- "Smooth" ou "Direct"
 	isTeleporting       = false,
 
 	noClipEnabled       = false,
@@ -85,14 +82,14 @@ local State = {
 	charCache           = { root = nil, hum = nil, char = nil, lastUpdate = 0 },
 	connections         = {},
 
-	-- ESP objects
+	-- objetos ESP
 	espObjects          = {},
 	tracerLines         = {},
 	healthBarObjects    = {},
 	playerESPObjects    = {},
 }
 
--- ===================== UTILS =====================
+-- ===================== UTILITÁRIOS =====================
 local Utils = {}
 
 function Utils.disconnectConnection(name)
@@ -127,22 +124,36 @@ function Utils.animateToggle(bg, circle, enabled)
 	}):Play()
 end
 
--- ===================== NPC CACHE =====================
+-- ===================== SCANNER DE NPCs =====================
+local function getAllNPCsInFolder(folder)
+	local list = {}
+	for _, obj in ipairs(folder:GetDescendants()) do
+		if obj:IsA("Model") and obj ~= LocalPlayer.Character then
+			local hum = obj:FindFirstChild("Humanoid")
+			local root = obj:FindFirstChild("HumanoidRootPart")
+			if hum and root and hum.Health > 0 then
+				table.insert(list, obj)
+			end
+		end
+	end
+	return list
+end
+
+-- ===================== CACHE DE NPCs =====================
 local NPCCache = {}
 
 function NPCCache.updateCache()
 	table.clear(State.npcCache)
 	local root = Utils.getCharComponents()
 	if not root then return end
-	for _, npc in ipairs(CONFIG.ESP_FOLDER_NPC:GetChildren()) do
-		if npc:IsA("Model") and npc ~= LocalPlayer.Character then
-			local hum = npc:FindFirstChild("Humanoid")
-			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-			if hum and npcRoot and hum.Health > 0 then
-				local dist = (root.Position - npcRoot.Position).Magnitude
-				if dist <= CONFIG.MAX_TARGET_DISTANCE then
-					table.insert(State.npcCache, { model = npc, root = npcRoot, humanoid = hum, distance = dist })
-				end
+	local allNPCs = getAllNPCsInFolder(CONFIG.ESP_FOLDER_NPC)
+	for _, npc in ipairs(allNPCs) do
+		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+		if npcRoot then
+			local dist = (root.Position - npcRoot.Position).Magnitude
+			if dist <= CONFIG.MAX_TARGET_DISTANCE then
+				local hum = npc:FindFirstChild("Humanoid")
+				table.insert(State.npcCache, { model = npc, root = npcRoot, humanoid = hum, distance = dist })
 			end
 		end
 	end
@@ -168,15 +179,7 @@ function NPCCache.isValid(npc)
 	return (root.Position - npcRoot.Position).Magnitude <= CONFIG.MAX_TARGET_DISTANCE
 end
 
-function NPCCache.getDistance(npc)
-	local root = Utils.getCharComponents()
-	if not root or not npc then return math.huge end
-	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-	if not npcRoot then return math.huge end
-	return (root.Position - npcRoot.Position).Magnitude
-end
-
--- ===================== ESP SYSTEM =====================
+-- ===================== SISTEMA ESP =====================
 local ESP = {}
 
 function ESP.createESP(npc)
@@ -200,47 +203,15 @@ function ESP.removeESP(npc)
 	end
 end
 
-function ESP.clearAllESP()
-	for _, esp in pairs(State.espObjects) do
-		if esp then esp:Destroy() end
-	end
-	table.clear(State.espObjects)
-end
-
 function ESP.createTracer(npc)
 	if State.tracerLines[npc] then return end
 	if not npc:FindFirstChild("HumanoidRootPart") then return end
 	local line = Drawing.new("Line")
-	line.Visible = true
+	line.Visible = false
 	line.Color = Color3.new(0, 1, 0)
 	line.Thickness = 2
 	line.Transparency = 0.7
 	State.tracerLines[npc] = line
-end
-
-function ESP.updateTracers()
-	if not State.tracersEnabled then return end
-	local camera = workspace.CurrentCamera
-	for npc, line in pairs(State.tracerLines) do
-		if npc and npc.Parent then
-			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-			if npcRoot then
-				local npcPos, onScreen = camera:WorldToViewportPoint(npcRoot.Position)
-				local screenSize = camera.ViewportSize
-				if onScreen then
-					line.From = Vector2.new(screenSize.X / 2, screenSize.Y)
-					line.To = Vector2.new(npcPos.X, npcPos.Y)
-					line.Visible = true
-				else
-					line.Visible = false
-				end
-			else
-				line.Visible = false
-			end
-		else
-			line.Visible = false
-		end
-	end
 end
 
 function ESP.removeTracer(npc)
@@ -248,13 +219,6 @@ function ESP.removeTracer(npc)
 		State.tracerLines[npc]:Remove()
 		State.tracerLines[npc] = nil
 	end
-end
-
-function ESP.clearAllTracers()
-	for _, line in pairs(State.tracerLines) do
-		if line then line:Remove() end
-	end
-	table.clear(State.tracerLines)
 end
 
 function ESP.createHealthBar(npc)
@@ -318,33 +282,76 @@ function ESP.removeHealthBar(npc)
 	end
 end
 
-function ESP.clearAllHealthBars()
-	for _, gui in pairs(State.healthBarObjects) do
-		if gui then gui:Destroy() end
-	end
-	table.clear(State.healthBarObjects)
-end
-
 function ESP.updateVisuals()
-	for _, npc in ipairs(CONFIG.ESP_FOLDER_NPC:GetChildren()) do
-		if npc:IsA("Model") and npc ~= LocalPlayer.Character then
-			local hum = npc:FindFirstChild("Humanoid")
-			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-			if hum and npcRoot and hum.Health > 0 then
-				if State.espEnabled then ESP.createESP(npc) else ESP.removeESP(npc) end
-				if State.tracersEnabled then ESP.createTracer(npc) else ESP.removeTracer(npc) end
-				if State.healthBarsEnabled then
-					ESP.createHealthBar(npc)
-					ESP.updateHealthBar(npc)
-				else
-					ESP.removeHealthBar(npc)
-				end
-			else
-				ESP.removeESP(npc); ESP.removeTracer(npc); ESP.removeHealthBar(npc)
-			end
+	-- Obtém a lista atual de todos os NPCs válidos na pasta
+	local currentNPCs = {}
+	for _, npc in ipairs(getAllNPCsInFolder(CONFIG.ESP_FOLDER_NPC)) do
+		currentNPCs[npc] = true
+		local hum = npc:FindFirstChild("Humanoid")
+		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+		-- Se já não está na lista e está dentro do alcance, aplica os efeitos
+		if State.espEnabled then
+			ESP.createESP(npc)
+		else
+			ESP.removeESP(npc)
+		end
+		if State.tracersEnabled then
+			ESP.createTracer(npc)
+		else
+			ESP.removeTracer(npc)
+		end
+		if State.healthBarsEnabled then
+			ESP.createHealthBar(npc)
+			ESP.updateHealthBar(npc)
+		else
+			ESP.removeHealthBar(npc)
 		end
 	end
+
+	-- Remove efeitos de NPCs que não existem mais ou morreram
+	for npc, _ in pairs(State.espObjects) do
+		if not currentNPCs[npc] then
+			ESP.removeESP(npc)
+		end
+	end
+	for npc, _ in pairs(State.tracerLines) do
+		if not currentNPCs[npc] then
+			ESP.removeTracer(npc)
+		end
+	end
+	for npc, _ in pairs(State.healthBarObjects) do
+		if not currentNPCs[npc] then
+			ESP.removeHealthBar(npc)
+		end
+	end
+
+	-- Atualiza as linhas de traçado
 	ESP.updateTracers()
+end
+
+function ESP.updateTracers()
+	if not State.tracersEnabled then return end
+	local camera = workspace.CurrentCamera
+	for npc, line in pairs(State.tracerLines) do
+		if npc and npc.Parent then
+			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+			if npcRoot then
+				local npcPos, onScreen = camera:WorldToViewportPoint(npcRoot.Position)
+				local screenSize = camera.ViewportSize
+				if onScreen then
+					line.From = Vector2.new(screenSize.X / 2, screenSize.Y)
+					line.To = Vector2.new(npcPos.X, npcPos.Y)
+					line.Visible = true
+				else
+					line.Visible = false
+				end
+			else
+				line.Visible = false
+			end
+		else
+			line.Visible = false
+		end
+	end
 end
 
 function ESP.updatePlayerESP()
@@ -355,8 +362,10 @@ function ESP.updatePlayerESP()
 		table.clear(State.playerESPObjects)
 		return
 	end
+	local currentPlayers = {}
 	for _, plr in ipairs(Players:GetPlayers()) do
 		if plr ~= LocalPlayer and plr.Character then
+			currentPlayers[plr] = true
 			local char = plr.Character
 			if not State.playerESPObjects[plr] then
 				local hl = Instance.new("Highlight")
@@ -371,9 +380,31 @@ function ESP.updatePlayerESP()
 			end
 		end
 	end
+	-- Remove ESP de jogadores que saíram
+	for plr, esp in pairs(State.playerESPObjects) do
+		if not currentPlayers[plr] then
+			esp:Destroy()
+			State.playerESPObjects[plr] = nil
+		end
+	end
 end
 
--- ===================== COMBAT SYSTEM =====================
+function ESP.clearAllESP()
+	for _, esp in pairs(State.espObjects) do if esp then esp:Destroy() end end
+	table.clear(State.espObjects)
+end
+
+function ESP.clearAllTracers()
+	for _, line in pairs(State.tracerLines) do if line then line:Remove() end end
+	table.clear(State.tracerLines)
+end
+
+function ESP.clearAllHealthBars()
+	for _, gui in pairs(State.healthBarObjects) do if gui then gui:Destroy() end end
+	table.clear(State.healthBarObjects)
+end
+
+-- ===================== SISTEMA DE COMBATE =====================
 local Combat = {}
 
 function Combat.killAuraLoop()
@@ -382,9 +413,6 @@ function Combat.killAuraLoop()
 	if now - State.lastKillAuraTime < State.killAuraDelay then return end
 	State.lastKillAuraTime = now
 
-	local root = Utils.getCharComponents()
-	if not root then return end
-
 	local closestNPC = NPCCache.findClosest()
 	if not closestNPC then return end
 
@@ -392,10 +420,10 @@ function Combat.killAuraLoop()
 	local npcHum = closestNPC:FindFirstChild("Humanoid")
 	if not npcRoot or not npcHum or npcHum.Health <= 0 then return end
 
-	local distance = (root.Position - npcRoot.Position).Magnitude
-	if distance > CONFIG.MAX_TARGET_DISTANCE then return end
+	local root = Utils.getCharComponents()
+	if not root then return end
+	if (root.Position - npcRoot.Position).Magnitude > CONFIG.MAX_TARGET_DISTANCE then return end
 
-	-- Fire remote (no arguments required)
 	pcall(function()
 		swingRemote:FireServer()
 	end)
@@ -458,7 +486,7 @@ function Combat.speedLoop()
 	end
 end
 
--- ===================== MOVEMENT =====================
+-- ===================== MOVIMENTO (NoClip) =====================
 local Movement = {}
 
 function Movement.enableNoClip()
@@ -479,7 +507,7 @@ function Movement.disableNoClip()
 	end
 end
 
--- ===================== TELEPORT =====================
+-- ===================== TELEPORTE =====================
 local Teleport = {}
 
 function Teleport.ultraSmoothTeleport(targetPosition)
@@ -519,8 +547,8 @@ end
 function Teleport.safeTeleportToNPC(npcName)
 	local root = Utils.getCharComponents()
 	if not root then return false, "Character not found" end
-	for _, npc in ipairs(CONFIG.TELEPORT_FOLDER_NPC:GetChildren()) do
-		if npc.Name == npcName and npc:IsA("Model") then
+	for _, npc in ipairs(getAllNPCsInFolder(CONFIG.TELEPORT_FOLDER_NPC)) do
+		if npc.Name == npcName then
 			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
 			if npcRoot then
 				task.spawn(function() Teleport.ultraSmoothTeleport(npcRoot.Position + Vector3.new(0, 2, 5)) end)
@@ -547,8 +575,8 @@ end
 
 function Teleport.getNPCList()
 	local list = {}
-	for _, npc in ipairs(CONFIG.TELEPORT_FOLDER_NPC:GetChildren()) do
-		if npc:IsA("Model") and npc:FindFirstChild("HumanoidRootPart") and not table.find(list, npc.Name) then
+	for _, npc in ipairs(getAllNPCsInFolder(CONFIG.TELEPORT_FOLDER_NPC)) do
+		if not table.find(list, npc.Name) then
 			table.insert(list, npc.Name)
 		end
 	end
@@ -567,7 +595,7 @@ function Teleport.getPlayerList()
 	return list
 end
 
--- ===================== GUI =====================
+-- ===================== INTERFACE (GUI) =====================
 local GUI = {}
 local screenGui, mainFrame
 local toggleRefs = {}
@@ -768,7 +796,7 @@ function GUI.build()
 	stroke.Transparency = 0.6
 	makeResizable(mainFrame)
 
-	-- Header
+	-- Cabeçalho
 	local header = Instance.new("Frame")
 	header.Size = UDim2.new(1, 0, 0, 40)
 	header.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
@@ -802,7 +830,7 @@ function GUI.build()
 		end
 	end)
 
-	-- Sidebar
+	-- Barra lateral
 	local sidebar = Instance.new("Frame")
 	sidebar.Size = UDim2.new(0, 45, 1, -45)
 	sidebar.Position = UDim2.new(0, 5, 0, 43)
@@ -815,7 +843,7 @@ function GUI.build()
 	sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	Instance.new("UIPadding", sidebar).PaddingTop = UDim.new(0, 8)
 
-	-- Pages container
+	-- Área de conteúdo
 	local contentArea = Instance.new("Frame")
 	contentArea.Size = UDim2.new(1, -60, 1, -45)
 	contentArea.Position = UDim2.new(0, 55, 0, 43)
@@ -880,7 +908,7 @@ function GUI.build()
 	createSidebarBtn(sidebar, "📍", teleportPage)
 	createSidebarBtn(sidebar, "🔧", miscPage)
 
-	-- Activate first page
+	-- Ativar primeira página
 	combatPage.Visible = true
 	local firstBtn = sidebar:FindFirstChildOfClass("TextButton")
 	if firstBtn then
@@ -888,13 +916,13 @@ function GUI.build()
 		firstBtn.TextColor3 = Color3.new(1, 1, 1)
 	end
 
-	-- ============= COMBAT PAGE =============
+	-- ============= PÁGINA COMBATE =============
 	createSectionHeader(combatPage, "Kill Aura")
-	local _, killAuraToggle, killAuraBg, killAuraCircle = createToggle(combatPage, "Kill Aura", "Attack nearest NPC using Swing remote", false)
+	local _, killAuraToggle, killAuraBg, killAuraCircle = createToggle(combatPage, "Kill Aura", "Ataca NPC mais próximo (Swing remote)", false)
 	local _, killAuraDelaySlider, killAuraDelayFill, killAuraDelayLabel, killAuraMin, killAuraMax = createSlider(combatPage, "Aura Delay", 0.1, 2, State.killAuraDelay)
 
 	createSectionHeader(combatPage, "Auto Farm")
-	local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(combatPage, "Auto Farm", "Farm nearest NPC", false)
+	local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(combatPage, "Auto Farm", "Farm no NPC mais próximo", false)
 	local modeFrame = Instance.new("Frame", combatPage)
 	modeFrame.Size = UDim2.new(1, 0, 0, 50)
 	modeFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
@@ -945,22 +973,22 @@ function GUI.build()
 	local _, autofarmDistSlider, autofarmDistFill, autofarmDistLabel, afMin, afMax = createSlider(combatPage, "Farm Distance", 1, 25, State.autofarmDistance)
 
 	createSectionHeader(combatPage, "Lock On")
-	local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Camera follows target", false)
+	local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Câmera segue o alvo", false)
 
 	createSectionHeader(combatPage, "Movement")
-	local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "Increase movement speed", false)
+	local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "Aumenta velocidade de movimento", false)
 	local _, speedValSlider, speedValFill, speedValLabel, spMin, spMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
-	local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "Jump infinitely", false)
+	local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "Pule infinitamente", false)
 
-	-- ============= VISUAL PAGE =============
+	-- ============= PÁGINA VISUAL =============
 	createSectionHeader(visualPage, "NPC Visuals")
-	local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "Highlight NPCs", false)
-	local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "Lines to NPCs", false)
-	local _, healthBarsToggle, healthBarsBg, healthBarsCircle = createToggle(visualPage, "Health Bars", "Show NPC health", false)
+	local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "Destaca NPCs", false)
+	local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "Linhas até os NPCs", false)
+	local _, healthBarsToggle, healthBarsBg, healthBarsCircle = createToggle(visualPage, "Health Bars", "Mostra vida dos NPCs", false)
 	createSectionHeader(visualPage, "Player Visuals")
-	local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "Highlight other players", false)
+	local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "Destaca outros jogadores", false)
 
-	-- ============= TELEPORT PAGE =============
+	-- ============= PÁGINA TELEPORTE =============
 	createSectionHeader(teleportPage, "Teleport Mode")
 	local modeContainer = Instance.new("Frame", teleportPage)
 	modeContainer.Size = UDim2.new(1, 0, 0, 40)
@@ -1005,7 +1033,7 @@ function GUI.build()
 	directBtn.MouseButton1Click:Connect(function() State.teleportMode = "Direct"; updateTeleportModeVisuals() end)
 	updateTeleportModeVisuals()
 
-	-- NPC Teleport list
+	-- Lista de NPCs (teleporte)
 	createSectionHeader(teleportPage, "Teleport to NPC")
 	local npcRefreshBtn = Instance.new("TextButton", teleportPage)
 	npcRefreshBtn.Size = UDim2.new(1, 0, 0, 30)
@@ -1047,7 +1075,7 @@ function GUI.build()
 	npcRefreshBtn.MouseButton1Click:Connect(populateNPCList)
 	task.spawn(populateNPCList)
 
-	-- Player Teleport list
+	-- Lista de Players (teleporte)
 	createSectionHeader(teleportPage, "Teleport to Player")
 	local playerRefreshBtn = Instance.new("TextButton", teleportPage)
 	playerRefreshBtn.Size = UDim2.new(1, 0, 0, 30)
@@ -1089,11 +1117,11 @@ function GUI.build()
 	playerRefreshBtn.MouseButton1Click:Connect(populatePlayerList)
 	task.spawn(populatePlayerList)
 
-	-- ============= MISC PAGE =============
+	-- ============= PÁGINA MISC =============
 	createSectionHeader(miscPage, "Misc")
-	local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", false)
+	local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Atravessar paredes", false)
 
-	-- ======= TOGGLE FUNCTIONS =======
+	-- ============= FUNÇÕES DOS TOGGLES =============
 	local function setKillAura(enabled)
 		State.killAuraEnabled = enabled
 		Utils.animateToggle(killAuraBg, killAuraCircle, enabled)
@@ -1193,7 +1221,7 @@ function GUI.build()
 	end
 	noClipToggle.MouseButton1Click:Connect(function() setNoClip(not State.noClipEnabled) end)
 
-	-- Slider handlers
+	-- Sliders
 	handleSlider(killAuraDelaySlider, killAuraDelayFill, killAuraDelayLabel, killAuraMin, killAuraMax, 10, function(v) State.killAuraDelay = v end)
 	handleSlider(autofarmDistSlider, autofarmDistFill, autofarmDistLabel, afMin, afMax, 10, function(v) State.autofarmDistance = v end)
 	handleSlider(speedValSlider, speedValFill, speedValLabel, spMin, spMax, 1, function(v) State.speedValue = v end)
@@ -1211,10 +1239,10 @@ function GUI.build()
 		noClip = { bg = noClipBg, circle = noClipCircle },
 	}
 
-	return screenGui, mainFrame
+	return screenGui, mainFrame, toggleRefs
 end
 
--- ===================== INPUT =====================
+-- ===================== SISTEMA DE INPUT =====================
 local function initInput()
 	UserInputService.JumpRequest:Connect(function()
 		if State.infiniteJumpEnabled then
@@ -1224,56 +1252,30 @@ local function initInput()
 	end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
+		-- Se outro script já processou, ignoramos
 		if processed then return end
+
 		if input.KeyCode == Enum.KeyCode.F1 then
 			mainFrame.Visible = not mainFrame.Visible
 		elseif input.KeyCode == Enum.KeyCode.F2 then
 			if toggleRefs.killAura then
-				local newState = not State.killAuraEnabled
-				State.killAuraEnabled = newState
-				Utils.animateToggle(toggleRefs.killAura.bg, toggleRefs.killAura.circle, newState)
-				if newState then
-					Utils.disconnectConnection("killAura")
-					State.connections.killAura = RunService.Heartbeat:Connect(Combat.killAuraLoop)
-				else
-					Utils.disconnectConnection("killAura")
-				end
+				setKillAura(not State.killAuraEnabled)
 			end
 		elseif input.KeyCode == Enum.KeyCode.F3 then
 			if toggleRefs.autofarm then
-				local newState = not State.autofarmEnabled
-				State.autofarmEnabled = newState
-				Utils.animateToggle(toggleRefs.autofarm.bg, toggleRefs.autofarm.circle, newState)
-				if newState then
-					Utils.disconnectConnection("autofarm")
-					State.connections.autofarm = RunService.Heartbeat:Connect(Combat.autofarmLoop)
-				else
-					Utils.disconnectConnection("autofarm")
-					State.lockedNPC = nil
-				end
+				setAutofarm(not State.autofarmEnabled)
 			end
-		elseif input.KeyCode == Enum.KeyCode.KeypadOne then
+		elseif input.KeyCode == Enum.KeyCode.KeypadOne or input.KeyCode == Enum.KeyCode.One then
 			if toggleRefs.speed then
-				local newState = not State.speedEnabled
-				State.speedEnabled = newState
-				Utils.animateToggle(toggleRefs.speed.bg, toggleRefs.speed.circle, newState)
-				if newState then
-					Utils.disconnectConnection("speed")
-					State.connections.speed = RunService.Heartbeat:Connect(Combat.speedLoop)
-				else
-					Utils.disconnectConnection("speed")
-				end
+				setSpeed(not State.speedEnabled)
 			end
-		elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
-			local newState = not State.infiniteJumpEnabled
-			State.infiniteJumpEnabled = newState
-			Utils.animateToggle(toggleRefs.infiniteJump.bg, toggleRefs.infiniteJump.circle, newState)
-		elseif input.KeyCode == Enum.KeyCode.KeypadZero then
+		elseif input.KeyCode == Enum.KeyCode.KeypadTwo or input.KeyCode == Enum.KeyCode.Two then
+			if toggleRefs.infiniteJump then
+				setInfiniteJump(not State.infiniteJumpEnabled)
+			end
+		elseif input.KeyCode == Enum.KeyCode.KeypadZero or input.KeyCode == Enum.KeyCode.Zero then
 			if toggleRefs.esp then
-				local newState = not State.espEnabled
-				State.espEnabled = newState
-				Utils.animateToggle(toggleRefs.esp.bg, toggleRefs.esp.circle, newState)
-				if not newState then ESP.clearAllESP() end
+				setESP(not State.espEnabled)
 			end
 		end
 	end)
@@ -1306,10 +1308,11 @@ local function initInput()
 	end)
 end
 
--- ===================== START =====================
+-- ===================== INICIALIZAÇÃO =====================
 local guiResult = GUI.build()
 screenGui = guiResult[1]
 mainFrame = guiResult[2]
+toggleRefs = guiResult[3]
 
 initInput()
 
@@ -1331,7 +1334,7 @@ screenGui.Destroying:Connect(function()
 end)
 
 print("═══════════════════════════════════════════════")
-print("     SIMPLE HUB - ADVANCED EDITION            ")
+print("     SIMPLE HUB - ADVANCED EDITION FIXED      ")
 print("═══════════════════════════════════════════════")
 print("  ⚔️  Kill Aura + Auto Farm + Lock On         ")
 print("  👁️  ESP, Tracers, Health Bars (NPC & Player)")
