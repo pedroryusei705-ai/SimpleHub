@@ -1,5 +1,5 @@
 --//====================================================--
---//   SIMPLE HUB - SPEED + JUMP + AUTO ATTACK (CPS)   --//
+--//   SIMPLE HUB - SPEED + JUMP + AUTO ATTACK (FIXED) --//
 --//====================================================--
 
 local Players = game:GetService("Players")
@@ -12,7 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
 -- Remote
-local SwingRemote = ReplicatedStorage:WaitForChild("RsPackage"):WaitForChild("Swing")
+local swingRemote = ReplicatedStorage:WaitForChild("RsPackage"):WaitForChild("Swing")
 
 -- Nome do jogo
 local gameName = game.Name
@@ -28,17 +28,19 @@ local state = {
     infiniteJumpEnabled = false,
 
     autoAttackEnabled = false,
-    attackCPS = 5, -- ataques por segundo
+    attackCPS = 6,
+    attackRange = 25,
 }
 
 -- Cache personagem
-local charCache = {root=nil, hum=nil, lastUpdate=0}
+local charCache = { root=nil, hum=nil, lastUpdate=0 }
 local function getCharComponents()
-    if tick() - charCache.lastUpdate > 0.3 then
+    local now = tick()
+    if now - charCache.lastUpdate > 0.3 then
         local char = LocalPlayer.Character
         charCache.root = char and char:FindFirstChild("HumanoidRootPart")
         charCache.hum = char and char:FindFirstChildOfClass("Humanoid")
-        charCache.lastUpdate = tick()
+        charCache.lastUpdate = now
     end
     return charCache.root, charCache.hum
 end
@@ -57,139 +59,184 @@ local function speedLoop()
     if not state.speedEnabled then return end
     local root, hum = getCharComponents()
     if root and hum then
-        local dir = hum.MoveDirection
-        if dir.Magnitude > 0 then
-            local y = root.AssemblyLinearVelocity.Y
-            root.AssemblyLinearVelocity = (dir.Unit * state.speedValue) + Vector3.new(0, y, 0)
+        local moveDir = hum.MoveDirection
+        if moveDir.Magnitude > 0 then
+            local curY = root.AssemblyLinearVelocity.Y
+            root.AssemblyLinearVelocity = (moveDir.Unit * state.speedValue) + Vector3.new(0, curY, 0)
         end
     end
 end
 
-local function setSpeed(v)
-    state.speedEnabled = v
-    disconnect("speed")
-    if v then
+local function setSpeed(enabled)
+    state.speedEnabled = enabled
+    if enabled then
+        disconnect("speed")
         connections.speed = RunService.Heartbeat:Connect(speedLoop)
+    else
+        disconnect("speed")
     end
 end
 
--- AUTO ATTACK (COM DELAY)
+-- INFINITE JUMP
+local function setInfiniteJump(enabled)
+    state.infiniteJumpEnabled = enabled
+end
+
+-- TARGET SYSTEM
+local function getClosestTarget()
+    local root = getCharComponents()
+    if not root then return nil end
+
+    local closest = nil
+    local shortest = state.attackRange
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+            if hrp and hum and hum.Health > 0 then
+                local dist = (hrp.Position - root.Position).Magnitude
+                if dist < shortest then
+                    shortest = dist
+                    closest = player
+                end
+            end
+        end
+    end
+
+    return closest
+end
+
+-- AUTO ATTACK
 local lastAttack = 0
 
 local function autoAttackLoop()
     if not state.autoAttackEnabled then return end
 
     local delay = 1 / state.attackCPS
-    if tick() - lastAttack >= delay then
-        lastAttack = tick()
+    if tick() - lastAttack < delay then return end
 
-        pcall(function()
-            SwingRemote:FireServer()
-        end)
-    end
+    local target = getClosestTarget()
+    if not target then return end
+
+    lastAttack = tick()
+
+    pcall(function()
+        swingRemote:FireServer()
+    end)
 end
 
-local function setAutoAttack(v)
-    state.autoAttackEnabled = v
-    disconnect("autoattack")
-    if v then
+local function setAutoAttack(enabled)
+    state.autoAttackEnabled = enabled
+    if enabled then
+        disconnect("autoattack")
         connections.autoattack = RunService.Heartbeat:Connect(autoAttackLoop)
+    else
+        disconnect("autoattack")
     end
 end
 
--- INFINITE JUMP
-local function setInfiniteJump(v)
-    state.infiniteJumpEnabled = v
-end
-
--- GUI
-local screenGui = Instance.new("ScreenGui", CoreGui)
+-- GUI (MESMA BASE DO SEU)
+local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SimpleHub"
 screenGui.ResetOnSpawn = false
+screenGui.Parent = CoreGui
 
-local mainFrame = Instance.new("Frame", screenGui)
+local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 340, 0, 360)
 mainFrame.Position = UDim2.new(0.5, -170, 0.5, -180)
 mainFrame.BackgroundColor3 = Color3.fromRGB(13,13,18)
 mainFrame.Active = true
 mainFrame.Draggable = true
+mainFrame.Parent = screenGui
 
 Instance.new("UICorner", mainFrame)
 
--- Layout
-local content = Instance.new("ScrollingFrame", mainFrame)
-content.Size = UDim2.new(1, -20, 1, -20)
-content.Position = UDim2.new(0,10,0,10)
-content.BackgroundTransparency = 1
-content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+local contentFrame = Instance.new("ScrollingFrame")
+contentFrame.Size = UDim2.new(1, -20, 1, -20)
+contentFrame.Position = UDim2.new(0, 10, 0, 10)
+contentFrame.BackgroundTransparency = 1
+contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+contentFrame.Parent = mainFrame
 
-local layout = Instance.new("UIListLayout", content)
-layout.Padding = UDim.new(0,8)
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 8)
+layout.Parent = contentFrame
 
--- Toggle
-local function createToggle(text, key, callback)
-    local frame = Instance.new("Frame", content)
+-- TOGGLE PADRÃO
+local function createToggle(parent, text, key, callback)
+    local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1,0,0,40)
     frame.BackgroundColor3 = Color3.fromRGB(18,18,25)
+    frame.Parent = parent
 
-    local label = Instance.new("TextLabel", frame)
+    local label = Instance.new("TextLabel")
     label.Size = UDim2.new(0.7,0,1,0)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = Color3.new(1,1,1)
+    label.Parent = frame
 
-    local btn = Instance.new("TextButton", frame)
+    local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0,40,0,20)
     btn.Position = UDim2.new(1,-50,0.5,-10)
+    btn.Parent = frame
 
     btn.MouseButton1Click:Connect(function()
-        state[key] = not state[key]
-        callback(state[key])
+        local new = not state[key]
+        state[key] = new
+        callback(new)
     end)
 end
 
--- Slider
-local function createSlider(text, min, max, val, callback)
-    local frame = Instance.new("Frame", content)
+-- SLIDER PADRÃO
+local function createSlider(parent, text, min, max, defaultVal, callback)
+    local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1,0,0,50)
+    frame.BackgroundColor3 = Color3.fromRGB(18,18,25)
+    frame.Parent = parent
 
-    local label = Instance.new("TextLabel", frame)
+    local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1,0,0,20)
     label.BackgroundTransparency = 1
-    label.Text = text.." ("..val..")"
+    label.Text = text.." ("..defaultVal..")"
     label.TextColor3 = Color3.new(1,1,1)
+    label.Parent = frame
 
     frame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local pct = math.random()
-            local newVal = math.floor((min + (max-min)*pct)*10)/10
-            state.attackCPS = newVal
-            label.Text = text.." ("..newVal..")"
-            callback(newVal)
+            local pct = math.clamp((UserInputService:GetMouseLocation().X - frame.AbsolutePosition.X)/frame.AbsoluteSize.X,0,1)
+            local value = math.floor((min + (max-min)*pct)*10)/10
+            label.Text = text.." ("..value..")"
+            callback(value)
         end
     end)
 end
 
 -- ELEMENTOS
-createToggle("Speed", "speedEnabled", setSpeed)
-createToggle("Infinite Jump", "infiniteJumpEnabled", setInfiniteJump)
-createToggle("Auto Attack", "autoAttackEnabled", setAutoAttack)
+createToggle(contentFrame, "Speed", "speedEnabled", setSpeed)
+createToggle(contentFrame, "Infinite Jump", "infiniteJumpEnabled", setInfiniteJump)
+createToggle(contentFrame, "Auto Attack", "autoAttackEnabled", setAutoAttack)
 
-createSlider("Attack CPS", 1, 20, state.attackCPS, function(v)
+createSlider(contentFrame, "Attack CPS", 1, 20, state.attackCPS, function(v)
     state.attackCPS = v
 end)
 
--- LOOP JUMP
+-- JUMP LOOP
 UserInputService.JumpRequest:Connect(function()
     if state.infiniteJumpEnabled then
         local _, hum = getCharComponents()
-        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
     end
 end)
 
--- TECLAS
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
+-- BINDS
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
 
     if input.KeyCode == Enum.KeyCode.KeypadOne then
         setSpeed(not state.speedEnabled)
@@ -200,4 +247,4 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-print("Simple Hub carregado com Auto Attack + CPS")
+print("Simple Hub FULL carregado (Auto Attack + CPS + Target)")
