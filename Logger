@@ -1,0 +1,29 @@
+local function fmt(v)
+    if typeof(v)=="CFrame" then
+        return "CFrame.new("..table.concat({v:GetComponents()}, ", ")..")"
+    elseif typeof(v)=="Vector3" then
+        return ("Vector3.new(%s,%s,%s)"):format(v.X,v.Y,v.Z)
+    elseif typeof(v)=="string" then
+        return ('"%s"'):format(v)
+    elseif typeof(v)=="Instance" then
+        return v:GetFullName()
+    else
+        return tostring(v)
+    end
+end
+
+local mt = getrawmetatable(game); setreadonly(mt,false)
+local old = mt.__namecall
+
+mt.__namecall = newcclosure(function(self, ...)
+    local m = getnamecallmethod()
+    if m=="FireServer" or m=="InvokeServer" then
+        local a={...}
+        print("\n== CALL ==")
+        print(self:GetFullName(), m)
+        for i,v in ipairs(a) do
+            print(("[%d] = %s"):format(i, fmt(v)))
+        end
+    end
+    return old(self, ...)
+end)
