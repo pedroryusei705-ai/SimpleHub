@@ -1,4069 +1,487 @@
--- ============================================================
---  vanta.dev | YBA Script
---  Full rewrite of HsB with all variables resolved
---  UI: Rayfield (scary666 fork)
--- ============================================================
+--//====================================================--
+--//         SIMPLE HUB - SPEED + INFINITE JUMP        --//
+--//====================================================--
+--//  Exibe o nome da experiência +                     --//
+--//  Speed Boost (ajustável) + Infinite Jump          --//
+--//  Atalhos: Keypad 1 = Speed, Keypad 2 = Jump       --//
+--//====================================================--
 
--- ── Bypass ────────────────────────────────────────────────────────────────────
-local bypassOk = false
-if hookmetamethod and newcclosure and checkcaller and getcallingscript then
-    bypassOk = pcall(function()
-        local _om
-        _om = hookmetamethod(Vector3.new(), "__index", newcclosure(function(self, index)
-            if not checkcaller() and index == "magnitude"
-            and tostring(getcallingscript()) == "ItemSpawn" then
-                return 0
-            end
-            return _om(self, index)
-        end))
-        local _KEY = "  ___XP DE KEY"
-        local _on
-        _on = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            local a = {...}
-            if not checkcaller() and rawequal(self.Name, "Returner")
-            and rawequal(a[1], "idklolbrah2de") then
-                return _KEY
-            end
-            return _on(self, ...)
-        end))
-        getgenv().oldMagnitude = _om
-        getgenv().oldNc = _on
-    end)
-end
-print(bypassOk and "[vanta] Bypass OK" or "[vanta] Bypass skipped (executor unsupported)")
-
--- ── Rayfield ──────────────────────────────────────────────────────────────────
-local Rayfield = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/scary666-eng/dontudare/refs/heads/main/udray"
-))()
-
-local Window = Rayfield:CreateWindow({
-    Name                = "vanta.dev | YBA",
-    LoadingTitle        = "Modified by @3dotdigit",
-    LoadingSubtitle     = "Your Bizarre Adventure",
-    ConfigurationSaving = { Enabled = false },
-    KeySystem           = false,
-    Theme               = {
-        TextColor = Color3.fromRGB(220, 200, 255),
-
-        Background = Color3.fromRGB(10, 5, 18),
-        Topbar = Color3.fromRGB(20, 10, 35),
-        Shadow = Color3.fromRGB(5, 0, 10),
-
-        NotificationBackground = Color3.fromRGB(15, 8, 28),
-        NotificationActionsBackground = Color3.fromRGB(80, 40, 140),
-
-        TabBackground = Color3.fromRGB(35, 15, 60),
-        TabStroke = Color3.fromRGB(80, 40, 120),
-        TabBackgroundSelected = Color3.fromRGB(120, 60, 200),
-        TabTextColor = Color3.fromRGB(200, 170, 255),
-        SelectedTabTextColor = Color3.fromRGB(255, 240, 255),
-
-        ElementBackground = Color3.fromRGB(20, 10, 38),
-        ElementBackgroundHover = Color3.fromRGB(30, 15, 55),
-        SecondaryElementBackground = Color3.fromRGB(12, 5, 22),
-        ElementStroke = Color3.fromRGB(80, 40, 130),
-        SecondaryElementStroke = Color3.fromRGB(55, 25, 95),
-
-        SliderBackground = Color3.fromRGB(90, 30, 160),
-        SliderProgress = Color3.fromRGB(120, 50, 210),
-        SliderStroke = Color3.fromRGB(150, 80, 255),
-
-        ToggleBackground = Color3.fromRGB(18, 8, 32),
-        ToggleEnabled = Color3.fromRGB(120, 50, 210),
-        ToggleDisabled = Color3.fromRGB(50, 25, 80),
-        ToggleEnabledStroke = Color3.fromRGB(160, 90, 255),
-        ToggleDisabledStroke = Color3.fromRGB(80, 40, 110),
-        ToggleEnabledOuterStroke = Color3.fromRGB(100, 50, 160),
-        ToggleDisabledOuterStroke = Color3.fromRGB(35, 15, 60),
-
-        DropdownSelected = Color3.fromRGB(30, 12, 55),
-        DropdownUnselected = Color3.fromRGB(18, 8, 32),
-
-        InputBackground = Color3.fromRGB(18, 8, 32),
-        InputStroke = Color3.fromRGB(90, 45, 145),
-        PlaceholderColor = Color3.fromRGB(140, 100, 190),
-    },
-})
-
--- ── Services ──────────────────────────────────────────────────────────────────
-local Players            = game:GetService("Players")
-local RunService         = game:GetService("RunService")
-local TeleportService    = game:GetService("TeleportService")
-local MarketplaceService = game:GetService("MarketplaceService")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
-local HttpService        = game:GetService("HttpService")
-local Stats              = game:GetService("Stats")
-local UserInputService   = game:GetService("UserInputService")
-local PhysicsService     = game:GetService("PhysicsService")
-
--- ── Wait for game ─────────────────────────────────────────────────────────────
-repeat task.wait() until game:IsLoaded()
-workspace:WaitForChild("Living")
-
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer.PlayerGui
 
-repeat task.wait() until LocalPlayer.Character
-
--- ── Auto-rejoin on kick (resolved from game.CoreGui.DescendantAdded handler) ──
-game.CoreGui.DescendantAdded:Connect(function(obj)
-    if obj.Name == "ErrorPrompt" then
-        local em = obj:FindFirstChild("ErrorMessage", true)
-        if not em then return end
-        repeat task.wait() until em.Text ~= "Label"
-        if em.Text:find("No exploiting") or em.Text:find("rejoin") then
-            task.wait(0.1)
-            TeleportService:Teleport(game.PlaceId)
-        end
-    end
+-- Obtém o nome da experiência
+local gameName = game.Name
+local success, info = pcall(function()
+    return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
 end)
-
--- ── PlayerStats refs (resolved from u18 table) ────────────────────────────────
-local PlayerStats    = LocalPlayer:WaitForChild("PlayerStats")
-local PlayerLevel    = PlayerStats:WaitForChild("Level")
-local PlayerPity     = PlayerStats:WaitForChild("PityCount")
-local PlayerStand    = PlayerStats:WaitForChild("Stand")
-local PlayerPrestige = PlayerStats:WaitForChild("Prestige")
-local PlayerSpec     = PlayerStats:WaitForChild("Spec")
-local PlayerMoney    = PlayerStats:WaitForChild("Money")
-local Backpack       = LocalPlayer.Backpack
-local ClientFX       = ReplicatedStorage:WaitForChild("ClientFX")
-local Dialogues      = workspace:WaitForChild("Dialogues")
-
--- resolved from u16
-local RIB_NAME = "Rib Cage of The Saint's Corpse"
-
--- resolved from u18.player_owns_2xinv
-local PlayerOwns2xInv = false
-pcall(function()
-    PlayerOwns2xInv = MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, 14597778)
-end)
-
--- ── Webhook state (resolved from getgenv().ping / getgenv().webhooklink / u29 / u31) ──
-local webhookEnabled = false
-local webhookLink    = ""
-local webhookPing    = ""
--- ── Safe Position After Farming ──
-local SAFE_POSITION = CFrame.new(1167.784058, 208.664047, -29.166414)
-
--- resolved from u29 — send a Discord webhook embed
-local function sendWebhook(message, pingUser)
-    if not webhookEnabled or webhookLink == "" then return end
-    local content = ""
-    if pingUser and webhookPing ~= "" then
-        content = "<@" .. webhookPing .. ">"
-    end
-    local body = HttpService:JSONEncode({
-        content  = content,
-        username = "vanta.dev",
-        embeds   = {
-            {
-                title = "Your Bizarre Adventure",
-                color = tonumber(16744258),
-                footer = {
-                    text     = "vanta.dev (" .. os.date("%H:%M") .. ")",
-                    icon_url = "https://media.discordapp.net/attachments/1452342924263030864/1482445825647837328/IMG_5545.png?ex=69bc40c3&is=69baef43&hm=7086aa9f20d28c312a4a0c2b1ab4dcca56ede0eb4a4611b5ba350f8b54490526&=&format=webp&quality=lossless&width=1060&height=351",
-                },
-                fields = {
-                    { name = "Account", value = "||" .. LocalPlayer.Name .. "||" },
-                    { name = "Info",    value  = message },
-                },
-            },
-        },
-    })
-    pcall(function()
-        request({
-            Url     = webhookLink,
-            Body    = body,
-            Method  = "POST",
-            Headers = { ["content-type"] = "application/json" },
-        })
-    end)
+if success and info and info.Name then
+    gameName = info.Name
 end
 
--- ── Item counts (resolved from v43 / u45 / u47) ───────────────────────────────
--- u18.m_arrows_count → itemCounts.arrows
--- u18.rokaka_count   → itemCounts.rokas
--- u18.ribs_count     → itemCounts.ribs
-local itemCounts = { arrows = 0, rokas = 0, ribs = 0 }
+-- Estado das features
+local state = {
+    speedEnabled = false,
+    speedValue = 160,
+    infiniteJumpEnabled = false,
+}
 
-local function refreshItemCounts()
-    itemCounts.arrows = 0
-    itemCounts.rokas  = 0
-    itemCounts.ribs   = 0
-    for _, v in pairs(Backpack:GetChildren()) do
-        if     v.Name == "Mysterious Arrow" then itemCounts.arrows += 1
-        elseif v.Name == "Rokakaka"         then itemCounts.rokas  += 1
-        elseif v.Name == RIB_NAME           then itemCounts.ribs   += 1
-        end
-    end
-end
-
--- resolved from u47 (ChildAdded)
-local function onBackpackItemAdded(item)
-    if     item.Name == "Mysterious Arrow" then itemCounts.arrows += 1
-    elseif item.Name == "Rokakaka"         then itemCounts.rokas  += 1
-    elseif item.Name == RIB_NAME           then itemCounts.ribs   += 1
-    end
-end
-
--- resolved from u45 (ChildRemoved)
-local function onBackpackItemRemoved(item)
-    if     item.Name == "Mysterious Arrow" then itemCounts.arrows = math.max(0, itemCounts.arrows - 1)
-    elseif item.Name == "Rokakaka"         then itemCounts.rokas  = math.max(0, itemCounts.rokas  - 1)
-    elseif item.Name == RIB_NAME           then itemCounts.ribs   = math.max(0, itemCounts.ribs   - 1)
-    end
-end
-
-local bpConn1 = Backpack.ChildAdded:Connect(onBackpackItemAdded)
-local bpConn2 = Backpack.ChildRemoved:Connect(onBackpackItemRemoved)
-
--- Re-hook on respawn (resolved from _local_player.ChildAdded handler)
-LocalPlayer.ChildAdded:Connect(function(child)
-    if child.Name == "Backpack" then
-        Backpack = child
-        itemCounts.arrows = 0
-        itemCounts.rokas  = 0
-        itemCounts.ribs   = 0
-        bpConn1:Disconnect()
-        bpConn2:Disconnect()
-        bpConn1 = Backpack.ChildAdded:Connect(onBackpackItemAdded)
-        bpConn2 = Backpack.ChildRemoved:Connect(onBackpackItemRemoved)
-    end
-end)
-
-refreshItemCounts()
-
--- ── Core character helpers ────────────────────────────────────────────────────
-
--- resolved from u18.get_character
-local function getCharacter()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        return LocalPlayer.Character
-    end
-    return LocalPlayer.CharacterAdded:Wait()
-end
-
--- resolved from u18.get_rootpart
-local function getRootPart()
-    return getCharacter():WaitForChild("HumanoidRootPart")
-end
-
-local function getHumanoid()
-    return getCharacter():FindFirstChildWhichIsA("Humanoid")
-end
-
-local function getRemoteEvent()
-    return getCharacter():WaitForChild("RemoteEvent")
-end
-
-local function getRemoteFunction()
-    return getCharacter():WaitForChild("RemoteFunction")
-end
-
-local function unequipAllTools()
-    pcall(function() getHumanoid():UnequipTools() end)
-end
-
--- resolved from u18.wait_until_new_char
-local function waitUntilNewChar()
-    -- Wait for new character instance
-    local newChar = LocalPlayer.CharacterAdded:Wait()
-    -- Wait for HumanoidRootPart to exist in the new character
-    newChar:WaitForChild("HumanoidRootPart")
-    newChar:WaitForChild("Humanoid")
-end
-
--- resolved from u18.get_ping
-local function getPing()
-    local ok, v = pcall(function()
-        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 100
-    end)
-    return ok and v or 50
-end
-
--- resolved from u18.get_quests
-local function getQuests()
-    local t = {}
-    local ok, questFrame = pcall(function()
-        return PlayerGui:WaitForChild("HUD")
-            :WaitForChild("Main")
-            :WaitForChild("Frames")
-            :WaitForChild("Quest")
-            :WaitForChild("Quests")
-    end)
-    if not ok then return t end
-    for _, v in pairs(questFrame:GetChildren()) do
-        if v.Name ~= "Sample" then t[v.Name] = true end
-    end
-    return t
-end
-
--- resolved from u232 — pity formula
-local function getPity()
-    return PlayerPity.Value <= 0 and 1
-        or math.clamp(1 + PlayerPity.Value / 25, 0, 10)
-end
-
--- resolved from u370
-local function roundTwo(n)
-    return math.floor(n * 100) / 100
-end
-
--- resolved from u30
-local function fireDialogue(npc, dialogue, option)
-    pcall(function()
-        getRemoteEvent():FireServer("EndDialogue", {
-            NPC      = npc,
-            Dialogue = dialogue,
-            Option   = option,
-        })
-    end)
-end
-
--- resolved from u18.learn_skill
-local function learnSkill(skill, treeType)
-    pcall(function()
-        getRemoteFunction():InvokeServer("LearnSkill", {
-            Skill        = skill,
-            SkillTreeType = treeType,
-        })
-    end)
-end
-
--- resolved from u18.get_bp_item
-local function getBpItem(name)
-    Backpack:WaitForChild(name, 1)
-    return Backpack:FindFirstChild(name)
-end
-
--- resolved from u18.get_bp_items
-local function getBpItems(name)
-    local t = {}
-    for _, v in pairs(Backpack:GetChildren()) do
-        if v.Name == name then table.insert(t, v) end
-    end
-    return t
-end
-
--- resolved from u18.has_item
-local function hasItem(name, count)
-    if count then return #getBpItems(name) == count end
-    return getBpItem(name) ~= nil
-end
-
--- resolved from u18.sell_item (single)
-local function sellItem(itemName, sellAll)
-    local item = getBpItem(itemName)
-    if not item then return end
-    item.Parent = getCharacter()
-    task.wait()
-    fireDialogue("Merchant", "Dialogue5", sellAll and "Option2" or "Option1")
-end
-
--- resolved from u18.sell_items (table of names)
-local function sellItems(itemsTable)
-    for name in pairs(itemsTable) do
-        for _, item in pairs(getBpItems(name)) do
-            item.Parent = getCharacter()
-            task.wait()
-            fireDialogue("Merchant", "Dialogue5", "Option2")
-            task.wait()
-        end
-    end
-end
-
--- resolved from u18.buy_items
-local function buyItems(itemsTable)
-    for name in pairs(itemsTable) do
-        pcall(function()
-            getRemoteEvent():FireServer("PurchaseShopItem", { ItemName = name })
-        end)
-    end
-end
-
--- ── Stand helpers ─────────────────────────────────────────────────────────────
-
--- resolved from u146
-local function getStandMorph()
-    return getCharacter():FindFirstChild("StandMorph")
-end
-
--- resolved from u229 — desummon if out
-local function desummonStand()
-    if getStandMorph() then
-        pcall(function()
-            getRemoteFunction():InvokeServer("ToggleStand", "Toggle")
-        end)
-        task.wait(0.5)
-    end
-end
-
--- resolved from u230 — summon if not out
-local function summonStand()
-    if not getStandMorph() then
-        pcall(function()
-            getRemoteFunction():InvokeServer("ToggleStand", "Toggle")
-        end)
-    end
-end
-
--- resolved from u231 — toggle regardless
-local function toggleStand()
-    pcall(function()
-        getRemoteFunction():InvokeServer("ToggleStand", "Toggle")
-    end)
-end
-
-local pilotEnabled = false
-local pilotSpeed   = 50
-local pilotSpeedChanger = false
-local pilotConns   = {}
-local standAnimController = nil
-
-local function cleanupPilot()
-    pilotEnabled = false
-    for _, conn in pairs(pilotConns) do
-        if conn and typeof(conn) == "RBXScriptConnection" then
-            conn:Disconnect()
-        end
-    end
-    pilotConns = {}
-    standAnimController = nil
-
-    pcall(function()
+-- Cache do personagem
+local charCache = { root = nil, hum = nil, lastUpdate = 0 }
+local function getCharComponents()
+    local now = tick()
+    if now - charCache.lastUpdate > 0.3 then
         local char = LocalPlayer.Character
-        if char then
-            if char:FindFirstChild("FocusCam") then
-                char.FocusCam:Destroy()
-            end
-            for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    v.CanCollide = true
-                end
-            end
-        end
-
-        local standMorph = getStandMorph()
-        if standMorph then
-            local hrp = standMorph:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                if hrp:FindFirstChild("VantaPilotBV") then hrp.VantaPilotBV:Destroy() end
-                if hrp:FindFirstChild("VantaPilotBG") then hrp.VantaPilotBG:Destroy() end
-            end
-        end
-
-        local tempStorage = ReplicatedStorage:FindFirstChild("TempStoragePilot")
-        if tempStorage then
-            for _, v in pairs(tempStorage:GetChildren()) do
-                if v.Name == "Naples' Sewers" then
-                    v.Parent = workspace.Locations
-                end
-            end
-            tempStorage:Destroy()
-        end
-        workspace.CurrentCamera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
-    end)
+        charCache.root = char and char:FindFirstChild("HumanoidRootPart")
+        charCache.hum = char and char:FindFirstChildOfClass("Humanoid")
+        charCache.lastUpdate = now
+    end
+    return charCache.root, charCache.hum
 end
 
-local function togglePilot(v)
-    if not v then
-        cleanupPilot()
-        return
+-- Conexões ativas
+local connections = {}
+
+local function disconnect(name)
+    if connections[name] then
+        connections[name]:Disconnect()
+        connections[name] = nil
     end
+end
 
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChild("Humanoid")
-    if not hrp or not hum then return end
-
-    -- Summon stand if needed
-    if not getStandMorph() then
-        summonStand()
-        local waited = 0
-        repeat task.wait(0.1) waited = waited + 0.1 until getStandMorph() or waited > 5
-        if not getStandMorph() then
-            Rayfield:Notify("Pilot", "Failed to summon stand!")
-            return
-        end
-    end
-
-    local standMorph = getStandMorph()
-    local standHRP = standMorph:WaitForChild("HumanoidRootPart", 5)
-    standAnimController = standMorph:FindFirstChild("AnimationController") or standMorph:FindFirstChildWhichIsA("Humanoid")
-
-    if not standHRP then
-        Rayfield:Notify("Pilot", "Stand RootPart not found!")
-        return
-    end
-
-    pilotEnabled = true
-    
-    -- Focus Camera
-    pcall(function()
-        local focusCam = char:FindFirstChild("FocusCam") or Instance.new("ObjectValue", char)
-        focusCam.Name = "FocusCam"
-        focusCam.Value = standAnimController or standHRP
-        workspace.CurrentCamera.CameraSubject = standAnimController or standHRP
-    end)
-
-    -- Disable Character Collisions
-    for _, part in pairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-        end
-    end
-
-    -- Physics Control (Stable movement)
-    local bv = standHRP:FindFirstChild("VantaPilotBV") or Instance.new("BodyVelocity")
-    bv.Name = "VantaPilotBV"
-    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bv.Velocity = Vector3.zero
-    bv.Parent = standHRP
-
-    local bg = standHRP:FindFirstChild("VantaPilotBG") or Instance.new("BodyGyro")
-    bg.Name = "VantaPilotBG"
-    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    bg.CFrame = standHRP.CFrame
-    bg.Parent = standHRP
-
-    -- Detach Function
-    local function detach()
-        pcall(function()
-            for _, desc in pairs(standMorph:GetDescendants()) do
-                if desc:IsA("AlignPosition") or desc:IsA("AlignOrientation") then
-                    desc.Enabled = false
-                end
-            end
-            local standAttach = (standMorph.PrimaryPart or standHRP):FindFirstChild("StandAttach")
-            if standAttach then
-                for _, desc in pairs(standAttach:GetChildren()) do
-                    if desc:IsA("AlignPosition") or desc:IsA("AlignOrientation") then
-                        desc.Enabled = false
-                    end
-                end
-            end
-        end)
-    end
-    detach()
-
-    -- Universal Movement Loop
-    table.insert(pilotConns, RunService.Heartbeat:Connect(function()
-        if not pilotEnabled then return end
-        if not char or not char.Parent then return cleanupPilot() end
-        if not standMorph or not standMorph.Parent then return cleanupPilot() end
-
-        detach()
-
-        local cam = workspace.CurrentCamera
+-- Speed loop (igual ao FFO)
+local function speedLoop()
+    if not state.speedEnabled then return end
+    local root, hum = getCharComponents()
+    if root and hum then
         local moveDir = hum.MoveDirection
-        local targetVel = Vector3.zero
-        
-        -- ground logic
-        local rayParams = RaycastParams.new()
-        rayParams.FilterDescendantsInstances = {char, standMorph}
-        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-        
-        local floorRay = workspace:Raycast(standHRP.Position + Vector3.new(0, 2, 0), Vector3.new(0, -100, 0), rayParams)
-        local groundY = nil
-        if floorRay then
-            groundY = floorRay.Position.Y + 3.0 -- offset 4 height stand
-        end
-
         if moveDir.Magnitude > 0 then
-            -- move direction
-            if standAnimController and pcall(function() standAnimController:Move(moveDir, false) end) then
-                -- go on if ok
-            end
-            
-            -- phsyics 4 movement
-            local horizontalVel = moveDir * pilotSpeed
-            local verticalVel = 0
-            
-            -- if ground target move towards it vertically
-            if groundY then
-                local diff = groundY - standHRP.Position.Y
-                verticalVel = diff * 10 -- smooth snap
-            end
-            
-            targetVel = Vector3.new(horizontalVel.X, verticalVel, horizontalVel.Z)
-            bg.CFrame = CFrame.new(standHRP.Position, standHRP.Position + moveDir)
-        else
-            -- stop if no input
-            if standAnimController and pcall(function() standAnimController:Move(Vector3.zero, false) end) then end
-            
-            local verticalVel = 0
-            if groundY then
-                local diff = groundY - standHRP.Position.Y
-                verticalVel = diff * 10
-            end
-            
-            targetVel = Vector3.new(0, verticalVel, 0)
-            -- Keep orientation stable when stopped
-            bg.CFrame = CFrame.new(standHRP.Position, standHRP.Position + cam.CFrame.LookVector * Vector3.new(1, 0, 1))
+            local curY = root.AssemblyLinearVelocity.Y
+            root.AssemblyLinearVelocity = (moveDir.Unit * state.speedValue) + Vector3.new(0, curY, 0)
         end
+    end
+end
 
-        bv.Velocity = targetVel
-        
-        -- Override speed if enabled
-        if pilotSpeedChanger and standAnimController then
-            pcall(function() standAnimController.WalkSpeed = pilotSpeed end)
+-- Ativa/desativa Speed
+local function setSpeed(enabled)
+    state.speedEnabled = enabled
+    if enabled then
+        disconnect("speed")
+        connections.speed = RunService.Heartbeat:Connect(speedLoop)
+    else
+        disconnect("speed")
+    end
+end
+
+-- Ativa/desativa Infinite Jump (evento JumpRequest)
+local function setInfiniteJump(enabled)
+    state.infiniteJumpEnabled = enabled
+end
+
+-- Cria GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SimpleHub"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = CoreGui
+
+-- Frame principal (arrastável)
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 340, 0, 320)
+mainFrame.Position = UDim2.new(0.5, -170, 0.5, -160)
+mainFrame.BackgroundColor3 = Color3.fromRGB(13, 13, 18)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(100, 100, 120)
+stroke.Thickness = 1
+stroke.Transparency = 0.6
+stroke.Parent = mainFrame
+
+-- Header
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+header.BorderSizePixel = 0
+header.Parent = mainFrame
+
+local headerCorner = Instance.new("UICorner")
+headerCorner.CornerRadius = UDim.new(0, 10)
+headerCorner.Parent = header
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -50, 1, 0)
+titleLabel.Position = UDim2.new(0, 15, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "✦  SIMPLE HUB  ✦"
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 13
+titleLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = header
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -38, 0, 6)
+closeBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+closeBtn.Text = "✕"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 18
+closeBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+closeBtn.BorderSizePixel = 0
+closeBtn.AutoButtonColor = false
+closeBtn.Parent = header
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeBtn
+
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+    for _, conn in pairs(connections) do
+        if conn then pcall(conn.Disconnect, conn) end
+    end
+end)
+
+-- Área de conteúdo (rolável)
+local contentFrame = Instance.new("ScrollingFrame")
+contentFrame.Size = UDim2.new(1, -20, 1, -55)
+contentFrame.Position = UDim2.new(0, 10, 0, 50)
+contentFrame.BackgroundTransparency = 1
+contentFrame.BorderSizePixel = 0
+contentFrame.ScrollBarThickness = 3
+contentFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
+contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+contentFrame.Parent = mainFrame
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 8)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = contentFrame
+
+-- Função auxiliar para criar toggle (agora sincronizada com o state)
+-- Retorna: container, toggleBg, toggleCircle
+local function createToggle(parent, labelText, descText, stateKey, callback)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, descText and 55 or 40)
+    container.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    container.BorderSizePixel = 0
+    container.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = container
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, -10, 0, 20)
+    label.Position = UDim2.new(0, 10, 0, descText and 8 or 10)
+    label.BackgroundTransparency = 1
+    label.Text = labelText
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 12
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+
+    if descText then
+        local desc = Instance.new("TextLabel")
+        desc.Size = UDim2.new(1, -20, 0, 18)
+        desc.Position = UDim2.new(0, 10, 0, 28)
+        desc.BackgroundTransparency = 1
+        desc.Text = descText
+        desc.Font = Enum.Font.Gotham
+        desc.TextSize = 9
+        desc.TextColor3 = Color3.fromRGB(120, 120, 140)
+        desc.TextXAlignment = Enum.TextXAlignment.Left
+        desc.TextWrapped = true
+        desc.Parent = container
+    end
+
+    local toggleBg = Instance.new("Frame")
+    toggleBg.Size = UDim2.new(0, 38, 0, 20)
+    toggleBg.Position = UDim2.new(1, -45, 0, 10)
+    toggleBg.BorderSizePixel = 0
+    toggleBg.Parent = container
+
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(1, 0)
+    bgCorner.Parent = toggleBg
+
+    local toggleCircle = Instance.new("Frame")
+    toggleCircle.Size = UDim2.new(0, 16, 0, 16)
+    toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    toggleCircle.BorderSizePixel = 0
+    toggleCircle.Parent = toggleBg
+
+    local circleCorner = Instance.new("UICorner")
+    circleCorner.CornerRadius = UDim.new(1, 0)
+    circleCorner.Parent = toggleCircle
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = toggleBg
+
+    local function updateVisual(enabled)
+        TweenService:Create(toggleBg, TweenInfo.new(0.2), {
+            BackgroundColor3 = enabled and Color3.fromRGB(100, 180, 255) or Color3.fromRGB(40, 40, 55)
+        }):Play()
+        TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
+            Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        }):Play()
+    end
+
+    -- Inicializa visual de acordo com o estado atual
+    updateVisual(state[stateKey])
+
+    btn.MouseButton1Click:Connect(function()
+        local newState = not state[stateKey]
+        state[stateKey] = newState
+        updateVisual(newState)
+        if callback then callback(newState) end
+    end)
+
+    return container, toggleBg, toggleCircle
+end
+
+-- Função para criar slider (estilo FFO)
+local function createSlider(parent, labelText, minVal, maxVal, defaultVal, callback)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 50)
+    container.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+    container.BorderSizePixel = 0
+    container.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = container
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 0, 18)
+    label.Position = UDim2.new(0, 10, 0, 8)
+    label.BackgroundTransparency = 1
+    label.Text = labelText
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 11
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0, 50, 0, 18)
+    valueLabel.Position = UDim2.new(1, -55, 0, 8)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = tostring(defaultVal)
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextSize = 11
+    valueLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = container
+
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(1, -20, 0, 4)
+    sliderBg.Position = UDim2.new(0, 10, 1, -15)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = container
+
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(1, 0)
+    bgCorner.Parent = sliderBg
+
+    local fill = Instance.new("Frame")
+    local pct = (defaultVal - minVal) / (maxVal - minVal)
+    fill.Size = UDim2.new(pct, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
+    fill.BorderSizePixel = 0
+    fill.Parent = sliderBg
+
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = fill
+
+    local sliderBtn = Instance.new("TextButton")
+    sliderBtn.Size = UDim2.new(1, 0, 1, 10)
+    sliderBtn.Position = UDim2.new(0, 0, 0, -5)
+    sliderBtn.BackgroundTransparency = 1
+    sliderBtn.Text = ""
+    sliderBtn.Parent = sliderBg
+
+    local dragging = false
+    sliderBtn.MouseButton1Down:Connect(function() dragging = true end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
         end
-
-        -- Sync character position (hidden)
-        if standHRP and hrp then
-            hrp.CFrame = standHRP.CFrame - Vector3.new(0, 25, 0)
-            hrp.Velocity = Vector3.zero
-        end
-    end))
-
-    -- Range Fix (Infinite Pilot Range)
-    table.insert(pilotConns, RunService.Heartbeat:Connect(function()
-        local isPiloting = standMorph:FindFirstChild("IsPiloting")
-        if isPiloting then
-            isPiloting.Value = 999999
-        end
-    end))
-
-    -- Collision Group Fix
-    pcall(function()
-        for _, v in pairs(standMorph:GetDescendants()) do
-            if v:IsA("BasePart") then
-                PhysicsService:SetPartCollisionGroup(v, "Players")
-            end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mouseX = UserInputService:GetMouseLocation().X
+            local pct = math.clamp((mouseX - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+            local value = minVal + pct * (maxVal - minVal)
+            value = math.floor(value * 10) / 10
+            valueLabel.Text = tostring(value)
+            fill.Size = UDim2.new(pct, 0, 1, 0)
+            if callback then callback(value) end
         end
     end)
 
-    Rayfield:Notify("Pilot", "Universal Stand Pilot Active!")
+    return container
 end
 
--- resolved from u18.has_stand_skill
-local function hasStandSkill(skillName)
-    local node = LocalPlayer:FindFirstChild("StandSkillTree")
-    if not node then return false end
-    local skill = node:FindFirstChild(skillName)
-    return skill and skill.Value or false
-end
+-- Seção "Game Info" (nome da experiência)
+local infoSection = Instance.new("Frame")
+infoSection.Size = UDim2.new(1, 0, 0, 65)
+infoSection.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+infoSection.BorderSizePixel = 0
+infoSection.Parent = contentFrame
 
--- resolved from u18.has_spec_skill
-local function hasSpecSkill(skillName)
-    local node = LocalPlayer:FindFirstChild("SpecSkillTree")
-    if not node then return nil end
-    local skill = node:FindFirstChild(skillName)
-    return skill and skill.Value or nil
-end
+local infoCorner = Instance.new("UICorner")
+infoCorner.CornerRadius = UDim.new(0, 6)
+infoCorner.Parent = infoSection
 
--- ── Noclip ────────────────────────────────────────────────────────────────────
-local noclipEnabled = false
-local noclipConn    = nil
-local NOCLIP_PARTS  = {
-    "HumanoidRootPart","Head","LeftArm","RightArm",
-    "LeftLeg","RightLeg","UpperTorso","LowerTorso","Torso",
-}
+local gameIcon = Instance.new("TextLabel")
+gameIcon.Size = UDim2.new(0, 40, 1, 0)
+gameIcon.BackgroundTransparency = 1
+gameIcon.Text = "🎮"
+gameIcon.Font = Enum.Font.GothamBold
+gameIcon.TextSize = 28
+gameIcon.TextColor3 = Color3.fromRGB(100, 180, 255)
+gameIcon.Parent = infoSection
 
-local function enableNoclip()
-    if noclipEnabled then return end
-    noclipConn = RunService.Stepped:Connect(function()
-        local c = LocalPlayer.Character
-        if not c then return end
-        for _, name in ipairs(NOCLIP_PARTS) do
-            local p = c:FindFirstChild(name)
-            if p and p:IsA("BasePart") then p.CanCollide = false end
-        end
-    end)
-    noclipEnabled = true
-end
+local gameNameLabel = Instance.new("TextLabel")
+gameNameLabel.Size = UDim2.new(1, -50, 1, 0)
+gameNameLabel.Position = UDim2.new(0, 45, 0, 0)
+gameNameLabel.BackgroundTransparency = 1
+gameNameLabel.Text = gameName
+gameNameLabel.Font = Enum.Font.GothamBold
+gameNameLabel.TextSize = 16
+gameNameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+gameNameLabel.TextWrapped = true
+gameNameLabel.TextScaled = true
+gameNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+gameNameLabel.Parent = infoSection
 
-local function disableNoclip()
-    if noclipConn then noclipConn:Disconnect() noclipConn = nil end
-    noclipEnabled = false
-end
+-- Seção "Movement Settings"
+local movementHeader = Instance.new("Frame")
+movementHeader.Size = UDim2.new(1, 0, 0, 28)
+movementHeader.BackgroundColor3 = Color3.fromRGB(13, 13, 18)
+movementHeader.BorderSizePixel = 0
+movementHeader.Parent = contentFrame
 
--- ── Fly ───────────────────────────────────────────────────────────────────────
-local flyEnabled = false
-local flySpeed   = 50
-local flyConn    = nil
+local headerLabel = Instance.new("TextLabel")
+headerLabel.Size = UDim2.new(1, -10, 1, 0)
+headerLabel.Position = UDim2.new(0, 10, 0, 0)
+headerLabel.BackgroundTransparency = 1
+headerLabel.Text = "⚡ MOVEMENT SETTINGS"
+headerLabel.Font = Enum.Font.GothamBold
+headerLabel.TextSize = 11
+headerLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+headerLabel.TextXAlignment = Enum.TextXAlignment.Left
+headerLabel.Parent = movementHeader
 
-local function toggleFly(v)
-    flyEnabled = v
-    if flyConn then flyConn:Disconnect() flyConn = nil end
-
-    if flyEnabled then
-        flyConn = RunService.RenderStepped:Connect(function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            local hum = char:FindFirstChild("Humanoid")
-            if not hrp or not hum then return end
-
-            local bv = hrp:FindFirstChild("VantaFlyBV")
-            if not bv then
-                bv = Instance.new("BodyVelocity")
-                bv.Name = "VantaFlyBV"
-                bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                bv.Velocity = Vector3.zero
-                bv.Parent = hrp
-            end
-
-            local bg = hrp:FindFirstChild("VantaFlyBG")
-            if not bg then
-                bg = Instance.new("BodyGyro")
-                bg.Name = "VantaFlyBG"
-                bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-                bg.CFrame = hrp.CFrame
-                bg.Parent = hrp
-            end
-
-            hrp.Velocity = Vector3.zero
-            local cam = workspace.CurrentCamera
+-- Criar toggles com as novas funções (agora sincronizadas)
+local speedContainer, speedToggleBg, speedToggleCircle = createToggle(contentFrame, "Speed Boost", "Increase movement speed", "speedEnabled", setSpeed)
+local speedSlider = createSlider(contentFrame, "Speed Value", 50, 300, state.speedValue, function(value)
+    state.speedValue = value
+    if state.speedEnabled then
+        local root, hum = getCharComponents()
+        if root and hum then
             local moveDir = hum.MoveDirection
-            local vel = Vector3.zero
-
             if moveDir.Magnitude > 0 then
-                vel = moveDir * flySpeed
+                local curY = root.AssemblyLinearVelocity.Y
+                root.AssemblyLinearVelocity = (moveDir.Unit * value) + Vector3.new(0, curY, 0)
             end
-
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                vel = vel + Vector3.new(0, flySpeed, 0)
-            elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-                vel = vel + Vector3.new(0, -flySpeed, 0)
-            end
-
-            bv.Velocity = vel
-            bg.CFrame = cam.CFrame
-        end)
-    else
-        pcall(function()
-            local hrp = getRootPart()
-            if hrp:FindFirstChild("VantaFlyBV") then hrp.VantaFlyBV:Destroy() end
-            if hrp:FindFirstChild("VantaFlyBG") then hrp.VantaFlyBG:Destroy() end
-        end)
-    end
-end
-
--- ── Teleport helpers ──────────────────────────────────────────────────────────
-
--- resolved from u228 — safe anchored teleport 200 studs up
-local function teleportUp()
-    local hrp = getRootPart()
-    hrp.Anchored                = true
-    hrp.AssemblyLinearVelocity  = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
-    local pad = Instance.new("Part")
-    pad.Name         = tostring(math.random(1, 6764))
-    pad.Anchored     = true
-    pad.Size         = Vector3.new(150, 1, 150)
-    pad.Transparency = 1
-    pad.CFrame       = hrp.CFrame * CFrame.new(0, 200, 0)
-    pad.Parent       = workspace
-    hrp.CFrame       = pad.CFrame * CFrame.new(0, 6, 0)
-    hrp.Anchored     = false
-    task.delay(15, function() pad:Destroy() end)
-end
-
--- resolved from u159 / u170 — quick temp part 210 studs up (anti-TS / anti-CW)
-local function teleportUpTemp()
-    local hrp = getRootPart()
-    local pad = Instance.new("Part")
-    pad.Name         = tostring(math.random(1, 100))
-    pad.Anchored     = true
-    pad.Size         = Vector3.new(999, 1, 999)
-    pad.Transparency = 1
-    pad.CFrame       = hrp.CFrame * CFrame.new(0, 210, 0)
-    pad.Parent       = workspace
-    hrp.CFrame       = pad.CFrame * CFrame.new(0, 2, 0)
-end
-
-local function useItem(itemName)
-    local item = getBpItem(itemName)
-    if not item then
-        Rayfield:Notify({Title="vanta.dev",Content="No "..itemName.." found!",Duration=4,Image=4483362458})
-        return false
-    end
-    getHumanoid():EquipTool(item)
-    local inChar = getCharacter():WaitForChild(itemName, 3)
-    if not inChar then return false end
-
-    repeat
-        pcall(function() inChar:Activate() end)
-        task.wait()
-    until PlayerGui:FindFirstChild("DialogueGui")
-
-    local dialogueGui = PlayerGui:FindFirstChild("DialogueGui")
-    local startTime = tick()
-    
-    while dialogueGui and dialogueGui.Parent and tick() - startTime < 5 do
-        pcall(function()
-            local frame = dialogueGui:FindFirstChild("Frame")
-            if not frame then return end
-            
-            local clickContinue = frame:FindFirstChild("ClickContinue")
-            if clickContinue then
-                for _, conn in pairs(getconnections(clickContinue.MouseButton1Click)) do
-                    conn:Fire()
-                end
-            end
-            
-            local options = frame:FindFirstChild("Options")
-            if options then
-                local option1 = options:FindFirstChild("Option1")
-                if option1 then
-                    local textButton = option1:FindFirstChild("TextButton")
-                    if textButton then
-                        for _, conn in pairs(getconnections(textButton.MouseButton1Click)) do
-                            conn:Fire()
-                        end
-                    end
-                end
-            end
-        end)
-        
-        task.wait(0.1)
-        dialogueGui = PlayerGui:FindFirstChild("DialogueGui")
-    end
-
-    return true
-end
-
-local function clickOption1()
-    local dialogueGui = PlayerGui:FindFirstChild("DialogueGui")
-    local startTime = tick()
-    
-    while dialogueGui and dialogueGui.Parent and tick() - startTime < 3 do
-        pcall(function()
-            local frame = dialogueGui:FindFirstChild("Frame")
-            if not frame then return end
-            
-            local cc = frame:FindFirstChild("ClickContinue")
-            if cc then
-                for _, conn in pairs(getconnections(cc.MouseButton1Click)) do
-                    conn:Fire()
-                end
-            end
-            
-            task.wait(0.05)
-            
-            local opts = frame:FindFirstChild("Options")
-            local opt1 = opts and opts:FindFirstChild("Option1")
-            local btn = opt1 and opt1:FindFirstChild("TextButton")
-            if btn then
-                for _, conn in pairs(getconnections(btn.MouseButton1Click)) do
-                    conn:Fire()
-                end
-            end
-        end)
-        
-        task.wait(0.1)
-        dialogueGui = PlayerGui:FindFirstChild("DialogueGui")
-    end
-end
-
-local function learnWorthiness()
-    for _, skill in ipairs({"Worthiness","Worthiness II","Worthiness III","Worthiness IV","Worthiness V"}) do
-        learnSkill(skill, "Character")
-        task.wait(0.1)
-    end
-end
-
--- ── Item registration system (resolved from u132/u133/u134/v140/u138) ─────────
--- registeredItems[itemName] = { ProximityPrompt, ... }
--- promptToName[prompt]      = itemName
--- promptConns[prompt]       = AncestryChanged connection
-local registeredItems = {}
-local promptToName    = {}
-local promptConns     = {}
-
-local function unregisterPrompt(prompt)
-    local name = promptToName[prompt]
-    if not name then return end
-    if promptConns[prompt] then
-        promptConns[prompt]:Disconnect()
-        promptConns[prompt] = nil
-    end
-    promptToName[prompt] = nil
-    if registeredItems[name] then
-        local idx = table.find(registeredItems[name], prompt)
-        if idx then table.remove(registeredItems[name], idx) end
-        if #registeredItems[name] == 0 then registeredItems[name] = nil end
-    end
-end
-
-local function registerPrompt(obj)
-    if obj.ClassName ~= "ProximityPrompt" then return end
-    -- HsB: registers only disabled prompts (items not yet picked up) with a PointLight
-    if obj.Enabled then return end
-    if not obj.Parent:FindFirstChild("PointLight", true) then return end
-    -- Also check the item mesh is visible (not transparency 1 = already picked up)
-    local mesh = obj.Parent:FindFirstChildWhichIsA("MeshPart") or obj.Parent:FindFirstChildWhichIsA("Part")
-    if mesh and mesh.Transparency >= 1 then return end
-    local name = obj.ObjectText
-    if not registeredItems[name] then registeredItems[name] = {} end
-    -- Avoid duplicate registration
-    if table.find(registeredItems[name], obj) then return end
-    table.insert(registeredItems[name], obj)
-    promptToName[obj] = name
-    promptConns[obj]  = obj.AncestryChanged:Connect(function()
-        if not obj:IsDescendantOf(workspace) then
-            unregisterPrompt(obj)
-        end
-    end)
-end
-
--- Seed existing items
-pcall(function()
-    for _, v in pairs(workspace.Item_Spawns.Items:GetDescendants()) do
-        registerPrompt(v)
-    end
-    workspace.Item_Spawns.Items.DescendantAdded:Connect(registerPrompt)
-    workspace.Item_Spawns.Items.DescendantRemoving:Connect(unregisterPrompt)
-end)
-
--- ── Notify helper ─────────────────────────────────────────────────────────────
-local function notify(title, msg, duration)
-    Rayfield:Notify({
-        Title    = "vanta.dev" .. (title ~= "" and (" | "..title) or ""),
-        Content  = msg,
-        Duration = duration or 5,
-        Image    = 4483362458,
-    })
-end
-
-local itemFarmEnabled    = true
-local selectedFarmItems  = {}  -- [itemName] = true
-local selectedSellItems  = {}  -- [itemName] = true
-local selectedBuyItems   = {}  -- [itemName] = true
-local sellWhen           = "Whenever"
-local buyItemsEnabled    = false
-local hopOnEmpty         = false
-local itemSpawnNotif     = true
-local notifyOnlySelected = true
-local itemSpawnConn      = nil
-
--- resolved from u18.is_full_of_item
-local function isFullOfItem(itemName)
-    local count = #getBpItems(itemName)
-    local FunctionLibrary = pcall(function() return require(ReplicatedStorage.Modules.FunctionLibrary) end)
-    -- fallback: compare against known max values
-    local maxTable = {
-        ["Mysterious Arrow"] = 25, ["Rokakaka"] = 25,
-        ["Diamond"] = 30, ["Gold Coin"] = 45, ["Pure Rokakaka"] = 10,
-        ["Stone Mask"] = 10, [RIB_NAME] = 10,
-        ["Steel Ball"] = 10, ["Ancient Scroll"] = 10, ["Dio's Diary"] = 10,
-        ["Caesar's Headband"] = 10, ["Christmas Present"] = 45,
-        ["Quinton's Glove"] = 10, ["Lucky Arrow"] = 10,
-    }
-    local max = (maxTable[itemName] or 999) * (PlayerOwns2xInv and 2 or 1)
-    return count >= max
-end
-
--- resolved from u437 main loop
--- ── Item Farm Cleanup ─────────────────────────────────────────────────────────
-getgenv().ItemStickConnections = {}
-local function cleanupItemStick()
-    for _, data in pairs(getgenv().ItemStickConnections or {}) do
-        pcall(function()
-            if data.conn then data.conn:Disconnect() end
-            if data.alignPos then data.alignPos:Destroy() end
-            if data.attA then data.attA:Destroy() end
-            if data.attB then data.attB:Destroy() end
-        end)
-    end
-    getgenv().ItemStickConnections = {}
-end
-
--- ── Item Farm Variables (from Huzuni AutoStoryline) ───────────────────────────
-getgenv().waitUntilCollect = 0.5
-
--- ── Item Farm Helper Functions (from Huzuni AutoStoryline) ────────────────────
-local function vu124(p118)
-    local v119, v120, v121 = pairs(game:GetService("Workspace").Item_Spawns.Items:GetChildren())
-    local v122 = {
-        Position = {},
-        ProximityPrompt = {},
-        Items = {}
-    }
-    while true do
-        local v123
-        v121, v123 = v119(v120, v121)
-        if v121 == nil then
-            break
-        end
-        if v123:FindFirstChild("MeshPart") and v123.ProximityPrompt.ObjectText == p118 then
-            if v123.ProximityPrompt.MaxActivationDistance ~= 8 then
-                print("FAKE?")
-            else
-                table.insert(v122.Items, v123.ProximityPrompt.ObjectText)
-                table.insert(v122.ProximityPrompt, v123.ProximityPrompt)
-                table.insert(v122.Position, v123.MeshPart.CFrame)
-            end
-        end
-    end
-    return v122
-end
-
-local function vu131(p125)
-    local v126, v127, v128 = pairs(game.Players.LocalPlayer.Backpack:GetChildren())
-    local v129 = 0
-    while true do
-        local v130
-        v128, v130 = v126(v127, v128)
-        if v128 == nil then
-            break
-        end
-        if v130.Name == p125 then
-            v129 = v129 + 1
-        end
-    end
-    print(v129)
-    return v129
-end
-
--- ── MODIFIED: Travel Function (Now goes ABOVE item instead of below) ──────────
-local function travelToItemDown(targetCFrame, targetPart, prompt)
-    cleanupItemStick()
-    
-    if not LocalPlayer or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        return
-    end
-
-    local hrp = LocalPlayer.Character.HumanoidRootPart
-    local STICK_DISTANCE = 3  -- Now positive: how high above the item to stay
-
-    local attA = Instance.new("Attachment")
-    attA.Name = "VantaStick_AttA"
-    attA.Parent = hrp
-    attA.WorldOrientation = Vector3.new(0, 0, 0)
-    
-    local attB = Instance.new("Attachment")
-    attB.Name = "VantaStick_AttB"
-    attB.Parent = targetPart
-    attB.Position = Vector3.new(0, 0, 0)
-    
-    local alignPos = Instance.new("AlignPosition")
-    alignPos.Name = "VantaStick_AlignPos"
-    alignPos.Attachment0 = attA
-    alignPos.Attachment1 = attB
-    alignPos.MaxForce = 1e7
-    alignPos.Responsiveness = 250
-    alignPos.RigidityEnabled = false
-    alignPos.Mode = Enum.PositionAlignmentMode.TwoAttachment
-    alignPos.Parent = hrp
-    
-    local stickData = {
-        alignPos = alignPos,
-        attA = attA,
-        attB = attB,
-        targetPart = targetPart,
-        conn = nil
-    }
-    table.insert(getgenv().ItemStickConnections, stickData)
-
-    -- Teleport ABOVE the item
-    local worldPos = targetPart.Position + Vector3.new(0, STICK_DISTANCE, 0)
-    hrp.CFrame = CFrame.new(worldPos) * CFrame.Angles(0, hrp.CFrame.Y, 0)
-    
-    -- Start the stick loop: keep the attachment target above the item
-    local stickConn = RunService.Heartbeat:Connect(function()
-        if not itemFarmEnabled then
-            cleanupItemStick()
-            return
-        end
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            cleanupItemStick()
-            return
-        end
-        
-        local currentHrp = LocalPlayer.Character.HumanoidRootPart
-        currentHrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        currentHrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-        
-        attA.WorldOrientation = Vector3.new(0, currentHrp.Orientation.Y, 0)
-        
-        if targetPart and targetPart.Parent then
-            attB.WorldPosition = targetPart.Position + Vector3.new(0, STICK_DISTANCE, 0)
-        else
-            cleanupItemStick()
-        end
-    end)
-    
-    stickData.conn = stickConn
-end
-
--- ── MODIFIED: Pickup Function (Now positions ABOVE item) ─────────────────────
-local function pickupItemHuzuni(pu137, pu138)
-    local vu139 = false
-    local vu140 = getgenv().waitUntilCollect + 5
-    
-    -- Desummon stand if summoned (from Huzuni)
-    if LocalPlayer.Character:FindFirstChild("SummonedStand") and LocalPlayer.Character:FindFirstChild("SummonedStand").Value then
-        getRemoteFunction():InvokeServer("ToggleStand", "Toggle")
-    end
-    
-    -- Backpack listener for pickup detection
-    LocalPlayer.Backpack.ChildAdded:Connect(function()
-        vu139 = true
-    end)
-    
-    -- Movement loop - MODIFIED: go 3 studs ABOVE the item
-    task.spawn(function()
-        while not vu139 do
-            task.wait()
-            game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = pu137.Position[pu138] + Vector3.new(0, 3, 0)
-        end
-    end)
-    
-    -- Wait before firing
-    task.wait(getgenv().waitUntilCollect)
-    
-    -- Fire proximity prompt - EXACT Huzuni method with ScreenGui handling
-    task.spawn(function()
-        fireproximityprompt(pu137.ProximityPrompt[pu138])
-        
-        -- Handle the green text popup (Huzuni's ScreenGui method)
-        local v141 = LocalPlayer.PlayerGui:WaitForChild("ScreenGui", 5)
-        if v141 then
-            local v142 = v141:WaitForChild("Part")
-            local v143, v144, v145 = pairs(v142:GetDescendants())
-            while true do
-                local v146
-                v145, v146 = v143(v144, v145)
-                if v145 == nil then
-                    break
-                end
-                if v146:FindFirstChild("Part") and (v146:IsA("ImageButton") and v146:WaitForChild("Part").TextColor3 == Color3.new(0, 1, 0)) then
-                    repeat
-                        firesignal(v146.MouseEnter)
-                        firesignal(v146.MouseButton1Up)
-                        firesignal(v146.MouseButton1Click)
-                        firesignal(v146.Activated)
-                        task.wait()
-                    until not LocalPlayer.PlayerGui:FindFirstChild("ScreenGui")
-                end
-            end
-        end
-    end)
-    
-    -- Timeout spawn
-    task.spawn(function()
-        for _ = vu140, 1, -1 do
-            task.wait(1)
-        end
-        if not vu139 then
-            vu139 = true
-        end
-    end)
-    
-    -- Wait until picked up
-    while not vu139 do
-        task.wait()
-    end
-    
-    return vu139
-end
-
--- ── Main Item Farm Function (NEAREST ITEM PRIORITY) ─────────────────────────────
-local function runItemFarm()
-    desummonStand()
-    
-    -- Enable noclip when farm starts if not already enabled
-    local wasNoclipEnabled = noclipEnabled
-    if not noclipEnabled then
-        enableNoclip()
-    end
-    
-    while itemFarmEnabled do
-        task.wait()
-
-        if sellWhen == "Whenever" then sellItems(selectedSellItems) end
-        if buyItemsEnabled then buyItems(selectedBuyItems) end
-
-        -- Get ALL items from ALL selected types and find nearest
-        local allItems = {}
-        local hrp = getRootPart()
-        
-        for itemName in pairs(selectedFarmItems) do
-            local itemData = vu124(itemName)
-            
-            for i = 1, #itemData.Items do
-                local itemPos = itemData.Position[i]
-                local distance = (itemPos.Position - hrp.Position).Magnitude
-                
-                table.insert(allItems, {
-                    name = itemName,
-                    position = itemPos,
-                    prompt = itemData.ProximityPrompt[i],
-                    distance = distance,
-                    index = i,
-                    itemData = itemData
-                })
-            end
-        end
-        
-        -- Sort by distance (nearest first)
-        table.sort(allItems, function(a, b)
-            return a.distance < b.distance
-        end)
-
-        if #allItems > 0 then
-            -- Collect the nearest item
-            local target = allItems[1]
-            
-            -- Sell logic before collecting
-            local shouldCollect = true
-            if isFullOfItem(target.name) then
-                if sellWhen:find("Sell one") and selectedSellItems[target.name] then
-                    sellItem(target.name, false)
-                    shouldCollect = true
-                elseif sellWhen:find("Sell all") and selectedSellItems[target.name] then
-                    sellItem(target.name, true)
-                    shouldCollect = true
-                elseif sellWhen == "Whenever" and selectedSellItems[target.name] then
-                    sellItem(target.name, true)
-                    shouldCollect = true
-                else
-                    shouldCollect = false
-                end
-            end
-
-            if shouldCollect then
-                -- Check if item still exists before traveling
-                local stillExists = false
-                local currentCheck = vu124(target.name)
-                for idx, pos in ipairs(currentCheck.Position) do
-                    if (pos.Position - target.position.Position).Magnitude < 1 then
-                        stillExists = true
-                        break
-                    end
-                end
-                
-                if stillExists then
-                    -- Travel to nearest item (now above)
-                    travelToItemDown(target.position, target.prompt.Parent:FindFirstChild("MeshPart") or target.prompt.Parent, target.prompt)
-                    
-                    -- Pickup (now above)
-                    pickupItemHuzuni(target.itemData, target.index)
-                    
-                    -- Cleanup
-                    cleanupItemStick()
-                    
-                    if sellWhen == "Whenever" then sellItems(selectedSellItems) end
-                    if buyItemsEnabled then buyItems(selectedBuyItems) end
-                end
-            end
-            
-            -- Small delay before next collection
-            task.wait(0.1)
-        else
-            -- No items found - teleport to safe position
-            cleanupItemStick()
-            if not wasNoclipEnabled and noclipEnabled then
-                disableNoclip()
-            end
-            task.wait(0.3)
-            getRootPart().CFrame = SAFE_POSITION
-            notify("Item Farm", "No items found. Teleported to safe position.")
-            
-            -- Wait for new items
-            while itemFarmEnabled do
-                task.wait(1)
-                
-                -- Check if any new items spawned
-                local newItems = false
-                for itemName in pairs(selectedFarmItems) do
-                    local itemData = vu124(itemName)
-                    if #itemData.Items > 0 then
-                        newItems = true
-                        break
-                    end
-                end
-                
-                if newItems then
-                    notify("Item Farm", "New items detected! Resuming collection...")
-                    if not wasNoclipEnabled then
-                        enableNoclip()
-                    end
-                    break
-                end
-            end
-            
-            if not itemFarmEnabled then return end
-        end
-    end
-    
-    -- Final cleanup
-    cleanupItemStick()
-    if not wasNoclipEnabled and noclipEnabled then
-        disableNoclip()
-    end
-end
-
--- ============================================================
---  STAND FARM  (resolved from _StandFarmTogg:OnChanged)
--- ============================================================
-local standFarmEnabled  = false
-local selectedStands    = {}   -- [standName] = true
-local stopOnShiny       = false
-local standFarmBusy     = false
-local STAND_RETRIES     = 70   -- resolved from u443
-
--- Which stands require Rib Cage (from HsB _Value check)
-local RIB_STANDS = {
-    ["Soft & Wet"]                 = true,
-    ["D4C"]                        = true,
-    ["The World Alternate Universe"]= true,
-    ["Scary Monsters"]             = true,
-    ["Tusk ACT 1"]                 = true,
-}
-
-local function isRibStand(standsTable)
-    for name in pairs(standsTable) do
-        if RIB_STANDS[name] then return true end
-    end
-    return false
-end
-
--- resolved from u18.notify_shiny
-local function notifyShiny()
-    local sm   = getStandMorph()
-    local skin = sm and sm:FindFirstChild("StandSkin")
-    local msg  = "Got shiny! " .. PlayerStand.Value
-        .. " (" .. (skin and skin.Value or "?") .. ")"
-    notify("Stand Farm", msg)
-    sendWebhook(msg, true)
-end
-
--- resolved from u18.notify_stand
-local function notifyStand()
-    local msg = "Got the stand you wanted: " .. PlayerStand.Value
-    notify("Stand Farm", msg)
-    sendWebhook(msg, true)
-end
-
--- Check shiny (via StandMorph.StandSkin)
-local function checkShiny()
-    local sm   = getStandMorph()
-    if not sm then return "" end
-    local skin = sm:FindFirstChild("StandSkin")
-    return skin and skin.Value or ""
-end
-
--- Rib stand farm loop — exact HsB _StandFarmTogg rib branch
-local function runRibStandFarm()
-    -- HsB: u230() — summon stand first (to check if we already have target)
-    summonStand()  -- u230
-
-    -- HsB: check if already have target stand
-    if selectedStands[PlayerStand.Value] then
-        notify("Stand Farm", "You already have the selected rib stand!")
-        standFarmEnabled = false
-        standFarmBusy    = false
-        return
-    end
-
-    -- HsB: while _StandFarmTogg.Value and task.wait()
-    while standFarmEnabled and task.wait() do
-        if not standFarmEnabled then break end
-
-        -- HsB: check rib count (u125.ribs_count == 0)
-        if itemCounts.ribs == 0 then
-            notify("Stand Farm", "No Rib Cages left — stopping.")
-            standFarmEnabled = false
-            break
-        end
-
-        -- HsB: if u146() (StandMorph exists), toggle stand off (u231 — not u229)
-        if getStandMorph() then
-            toggleStand()  -- u231 (toggle regardless)
-        end
-
-        -- HsB: learn_skill('Worthiness ', 'Character') — note trailing space, exact match
-        learnSkill("Worthiness ", "Character")
-
-        -- HsB: u397(u123, 'Dialogue2', 'Option1') — fire rib dialogue
-        fireDialogue(RIB_NAME, "Dialogue2", "Option1")
-
-        -- HsB: wait for StandMorph to appear, then check shiny
-        local sm = getCharacter():WaitForChild("StandMorph", 10)
-        if not sm then continue end
-
-        local skin = sm:WaitForChild("StandSkin")
-
-        -- HsB: check shiny
-        if skin.Value ~= "" and stopOnShiny then
-            notifyShiny()
-            standFarmEnabled = false
-            break
-        end
-
-        if not standFarmEnabled then break end
-
-        -- HsB: check target stand
-        if selectedStands[PlayerStand.Value] then
-            notifyStand()
-            standFarmEnabled = false
-            break
-        end
-    end
-end
-
--- Arrow stand farm loop — exact HsB _StandFarmTogg arrow branch
-local function runArrowStandFarm()
-    local retries = STAND_RETRIES  -- u443
-
-    -- HsB: if stand exists but StandMorph not visible, try to get it out first
-    if not getStandMorph() and PlayerStand.Value ~= "None" then
-        repeat
-            task.wait()
-            toggleStand()  -- u231
-            retries -= 1
-        until getStandMorph() or retries <= 0 or not standFarmEnabled
-
-        if not standFarmEnabled then return end
-
-        -- Stand equip bug (HsB: kill character, wait for new char, teleport up)
-        if not getStandMorph() then
-            getCharacter().Humanoid.Health = 0
-            waitUntilNewChar()
-            task.wait(0.5)  -- let character fully load
-            if not standFarmEnabled then return end
-            teleportUp()  -- u228
-        end
-    end
-
-    -- Main loop (HsB: while _StandFarmTogg.Value and task.wait())
-    while standFarmEnabled and task.wait() do
-        if not standFarmEnabled then break end
-
-        -- HsB: if stand is None, learn worthiness and use arrow
-        if PlayerStand.Value == "None" then
-            learnSkill("Worthiness", "Character")
-            if not standFarmEnabled then break end
-
-            -- u241('Mysterious Arrow')
-            if not useItem("Mysterious Arrow") then
-                notify("Stand Farm", "No Mysterious Arrows — stopping.")
-                standFarmEnabled = false
-                break
-            end
-
-            -- HsB: repeat task.wait() until u122.Value ~= 'None'
-            repeat task.wait() until PlayerStand.Value ~= "None" or not standFarmEnabled
-            if not standFarmEnabled then break end
-        end
-
-        -- HsB: reset retries to 70 each loop iteration
-        retries = STAND_RETRIES
-
-        -- HsB: if StandMorph not visible, try to summon it (repeat u231 until u146())
-        if not getStandMorph() then
-            repeat
-                task.wait()
-                retries -= 1
-                toggleStand()  -- u231
-            until getStandMorph() or retries <= 0 or not standFarmEnabled
-
-            if not standFarmEnabled then break end
-
-            -- Stand equip bug fix (HsB: kill, wait, teleport up)
-            if not getStandMorph() then
-                getCharacter().Humanoid.Health = 0
-                waitUntilNewChar()
-                task.wait(0.5)  -- let character fully load
-                if not standFarmEnabled then break end
-                teleportUp()  -- u228
-            end
-        end
-
-        -- HsB: repeat task.wait() u230() until StandMorph exists
-        repeat
-            task.wait()
-            summonStand()  -- u230
-        until getStandMorph() or not standFarmEnabled
-
-        if not standFarmEnabled then break end
-
-        -- HsB: check shiny
-        local sm   = getStandMorph()
-        local skin = sm and sm:WaitForChild("StandSkin")
-        if skin and skin.Value ~= "" and stopOnShiny then
-            notifyShiny()
-            standFarmEnabled = false
-            break
-        end
-
-        -- HsB: check if this is the target stand
-        if selectedStands[PlayerStand.Value] then
-            notifyStand()
-            standFarmEnabled = false
-            break
-        end
-
-        if not standFarmEnabled then break end
-
-        -- HsB: use Rokakaka to reset (u241('Rokakaka'))
-        if not useItem("Rokakaka") then
-            notify("Stand Farm", "No Rokakaka — stopping.")
-            standFarmEnabled = false
-            break
-        end
-
-        -- HsB: repeat task.wait() until u122.Value == 'None'
-        repeat task.wait() until PlayerStand.Value == "None" or not standFarmEnabled
-
-        -- HsB: u125:wait_until_new_char() — wait for character respawn after roka
-        waitUntilNewChar()
-        task.wait(0.5)  -- let character fully load before teleporting
-
-        if not standFarmEnabled then break end
-
-        -- HsB: u228() — teleport to safe spot AFTER respawn
-        teleportUp()
-    end
-end
-
-local function startStandFarm()
-    -- HsB u444: busy check
-    if standFarmBusy then
-        notify("Stand Farm", "Already running — please wait.")
-        return
-    end
-    standFarmBusy = true
-
-    -- HsB: level check >= 3
-    if PlayerLevel.Value < 3 then
-        notify("Stand Farm", "Need at least level 3 to get stands.")
-        standFarmEnabled = false
-        standFarmBusy    = false
-        return
-    end
-
-    -- HsB: u228() called right after level check, before stand list check
-    teleportUp()
-
-    -- HsB: check stand selected
-    if not next(selectedStands) then
-        notify("Stand Farm", "Please select a stand first.")
-        standFarmEnabled = false
-        standFarmBusy    = false
-        return
-    end
-
-    -- HsB rib branch: u230() to summon, check if already have it, level check, then loop
-    if isRibStand(selectedStands) then
-        summonStand()
-        if selectedStands[PlayerStand.Value] then
-            notify("Stand Farm", "You already have the selected rib stand!")
-            standFarmEnabled = false
-            standFarmBusy    = false
-            return
-        end
-        if PlayerLevel.Value < 6 then
-            notify("Stand Farm", "Need at least level 6 for rib stands.")
-            standFarmEnabled = false
-            standFarmBusy    = false
-            return
-        end
-        runRibStandFarm()
-    else
-        runArrowStandFarm()
-    end
-
-    standFarmBusy = false
-end
-
--- ============================================================
---  PITY FARM  (resolved from _PityFarmTogg:OnChanged)
--- ============================================================
-local pityFarmEnabled = false
-local pityWanted      = nil      -- u144
-local halfPityGoal    = nil      -- u145
-local pityFarmDone    = true     -- u459  (true = thread is idle / done with task)
-local pityRollLimit   = 680      -- u460  (summon retry cap)
-local noRibsFlag      = false    -- u461
-local noArrowsFlag    = false    -- u462
-local noRokasFlag     = false    -- u463
-local dtFarmingFlag   = false    -- u464  (item farm running for pity)
-local dtGuardFlag     = false    -- u466  (double trouble currently rolling)
-local doubleTrouble   = false
-local hopModePity     = false
-
-local function runPityFarm()
-    if not pityFarmDone then
-        notify("Pity Farm", "Wait for current tasks to finish first.")
-        return
-    end
-    if not pityWanted then
-        notify("Pity Farm", "Set a Pity Goal first (1-10).")
-        return
-    end
-    if pityWanted <= getPity() then
-        notify("Pity Farm", "Goal must be higher than current pity.")
-        pityFarmEnabled = false
-        return
-    end
-
-    teleportUp()
-    task.wait(1)
-
-    noRibsFlag   = false
-    noArrowsFlag = false
-    noRokasFlag  = false
-    dtFarmingFlag = false
-    dtGuardFlag   = false
-
-    -- ── Double Trouble thread (resolved from first task.spawn in _PityFarmTogg) ──
-    task.spawn(function()
-        while pityFarmEnabled do
-            task.wait()
-            if not doubleTrouble or dtFarmingFlag then continue end
-
-            halfPityGoal = pityWanted / 2
-
-            if halfPityGoal <= getPity() then
-                doubleTrouble = false
-                continue
-            end
-
-            if not getBpItem("Mysterious Arrow") then
-                if not noArrowsFlag then notify("Pity Farm", "No Mysterious Arrows!") end
-                noArrowsFlag = true
-                dtGuardFlag  = false
-                continue
-            end
-            if not getBpItem("Rokakaka") then
-                if not noRokasFlag then notify("Pity Farm", "No Rokakaka!") end
-                noRokasFlag = true
-                dtGuardFlag = false
-                continue
-            end
-            if noArrowsFlag or noRokasFlag then continue end
-
-            -- Wait for rib thread to be idle
-            repeat task.wait() until pityFarmDone or not pityFarmEnabled
-            if not pityFarmEnabled then return end
-
-            dtGuardFlag = false
-            learnSkill("Worthiness", "Character")
-
-            if PlayerStand.Value ~= "None" then
-                -- Roka out the existing stand
-                dtGuardFlag   = true
-                pityFarmDone  = false
-                useItem("Rokakaka")
-                repeat task.wait() until PlayerStand.Value == "None" or not pityFarmEnabled
-                dtGuardFlag  = false
-                pityFarmDone = true
-                if doubleTrouble and pityFarmEnabled then
-                    waitUntilNewChar()
-                    task.wait(0.5)  -- let character fully load
-                    teleportUp()
-                end
-            else
-                -- Arrow roll
-                dtGuardFlag  = true
-                pityFarmDone = false
-                useItem("Mysterious Arrow")
-                repeat task.wait() until PlayerStand.Value ~= "None" or not pityFarmEnabled
-                dtGuardFlag  = false
-                pityFarmDone = true
-                if doubleTrouble and pityFarmEnabled then
-                    if getPity() >= halfPityGoal then
-                        -- half goal reached, do nothing extra
-                    else
-                        dtGuardFlag  = true
-                        pityFarmDone = false
-                        useItem("Rokakaka")
-                        repeat task.wait() until PlayerStand.Value == "None" or not pityFarmEnabled
-                        dtGuardFlag  = false
-                        pityFarmDone = true
-                        if doubleTrouble and pityFarmEnabled then
-                            waitUntilNewChar()
-                            task.wait(0.5)  -- let character fully load
-                            teleportUp()
-                        end
-                    end
-                end
-            end
-        end
-    end)
-
-    -- ── Rib pity thread (resolved from second task.spawn in _PityFarmTogg) ──
-    task.spawn(function()
-        local summonRetries = pityRollLimit
-        while pityFarmEnabled do
-            task.wait()
-
-            local useDouble = doubleTrouble or dtFarmingFlag
-
-            -- Check rib supply
-            if not useDouble and not getBpItem(RIB_NAME) then
-                if not noRibsFlag then notify("Pity Farm", "No Rib Cages!") end
-                noRibsFlag   = true
-                pityFarmDone = true
-                continue
-            end
-
-            -- If double trouble guard is active, wait for it
-            if not useDouble and dtGuardFlag then
-                repeat task.wait() until not dtGuardFlag or not pityFarmEnabled or doubleTrouble
-                pityFarmDone = true
-                continue
-            end
-
-            local skip = useDouble or (doubleTrouble) or not pityFarmEnabled
-
-            if not skip then
-                teleportUp()
-                if not getBpItem(RIB_NAME) then
-                    if not noRibsFlag then notify("Pity Farm", "No Rib Cages!") end
-                    noRibsFlag   = true
-                    pityFarmDone = true
-                    continue
-                end
-            end
-
-            if not skip then
-                pityFarmDone = false
-                -- Rib use cycle (HsB: repeat learn+fireDialogue+desummon until not u146())
-                repeat
-                    task.wait(0.15)
-                    learnSkill("Worthiness", "Character")
-                    fireDialogue(RIB_NAME, "Dialogue2", "Option1")
-                    desummonStand()
-                until not getStandMorph() or not pityFarmEnabled
-
-                if not getBpItem(RIB_NAME) then
-                    if not noRibsFlag then notify("Pity Farm", "No Rib Cages!") end
-                    noRibsFlag   = true
-                    pityFarmDone = true
-                    continue
-                end
-
-                -- Summon new stand (HsB: repeat task.spawn(u230) until u146() or retry cap)
-                summonRetries = pityRollLimit
-                repeat
-                    task.wait(0.015)
-                    task.spawn(summonStand)
-                    summonRetries -= 1
-                until getStandMorph() or summonRetries <= 0 or not pityFarmEnabled
-
-                if not getStandMorph() then
-                    -- Stand bug — kill and respawn
-                    notify("Pity Farm", "Stand summon bug — respawning...")
-                    getCharacter().Humanoid.Health = 0
-                    waitUntilNewChar()
-                    task.wait(0.5)  -- let character fully load
-                    teleportUp()
-                    summonStand()
-                end
-
-                pityFarmDone = true
-            end
-
-            pityFarmDone = true
-
-            -- Check if goal reached
-            if not doubleTrouble and pityFarmEnabled and not skip then
-                if pityWanted <= getPity() then
-                    notify("Pity Farm", "Goal reached! Pity: " .. roundTwo(getPity()))
-                    sendWebhook("Pity Farm goal reached! Pity: " .. roundTwo(getPity()), true)
-                    pityFarmEnabled = false
-                    return
-                end
-            end
-            task.wait(0.02)
-        end
-    end)
-end
-
--- ============================================================
---  AUTO MIH  (resolved from _AutoMIH:OnChanged)
--- ============================================================
-local autoMIHEnabled = false
-
--- resolved from u236
-local function firePucciDialogues()
-    if PlayerStand.Value == "Whitesnake" and not Backpack:FindFirstChild("Green Baby") then
-        for _, d in ipairs({"Thugs","Alpha Thugs","Corrupt Police","Zombie Henchman","Vampire","Green Baby"}) do
-            fireDialogue("Pucci", d, "Option1")
-        end
-    end
-end
-
--- resolved from u237
-local function fireMIHDialogues()
-    fireDialogue("Green Baby",                "Dialogue2", "Option1")
-    fireDialogue("Pucci",                     "MIH12",     "Option1")
-    fireDialogue("Pucci",                     "MIH6",      "Option1")
-    if PlayerStand.Value == "C-Moon" and not Backpack:FindFirstChild("Dio's Bone") then
-        fireDialogue("Path to Heaven",        "Dialogue8", "Option1")
-    end
-    fireDialogue("Heaven Ascension DEO Quest","Dialogue5", "Option1")
-    fireDialogue("Pucci",                     "MIH9",      "Option1")
-end
-
--- resolved from u451 — kill an NPC via stand attacks
-local function killNPC(npcName, offsetZ, offsetY)
-    local npc = workspace.Living:FindFirstChild(npcName)
-    if not npc or not npc:FindFirstChild("HumanoidRootPart") then return end
-    local npcHRP = npc.HumanoidRootPart
-
-    getRootPart().CFrame = npcHRP.CFrame - npcHRP.CFrame.LookVector * (offsetZ or 2)
-        + Vector3.new(0, offsetY or 20, 0)
-    task.wait(0.35)
-
-    local dead    = false
-    local respawn = false
-
-    -- HsB uses DropMoney ChildAdded to detect kill; we use Experience change
-    local xpConn = LocalPlayer.PlayerStats.Experience:GetPropertyChangedSignal("Value"):Connect(function()
-        dead = true
-    end)
-
-    local moneyConn = PlayerGui:WaitForChild("HUD").Main.DropMoney.Money.ChildAdded:Connect(function()
-        respawn = true
-        if workspace.Living:FindFirstChild(npcName) then
-            pcall(function()
-                getRootPart().CFrame = workspace.Living[npcName].HumanoidRootPart.CFrame
-                if npcName ~= "Heaven Ascension Dio" and npcName ~= "Jotaro Kujo" then
-                    npc:Destroy()
-                    task.wait(0.35)
-                    dead = true
-                end
-                if npcName == "Vampire" and npc:FindFirstChild("Health") and npc.Health.Value <= 0 then
-                    getRootPart().CFrame = npc.HumanoidRootPart.CFrame
-                    npc:Destroy()
-                    dead = true
-                    task.wait(0.25)
-                end
-            end)
-        end
-    end)
-
-    while not dead and autoMIHEnabled do
-        task.wait()
-        -- Ensure stand is summoned
-        if not getStandMorph() then
-            repeat task.wait() toggleStand() until getStandMorph() or not autoMIHEnabled
-        end
-        pcall(function()
-            getRemoteEvent():FireServer("InputBegan",  {Input = Enum.KeyCode.T})
-            getRemoteEvent():FireServer("InputEnded",  {Input = Enum.KeyCode.T})
-            getRemoteEvent():FireServer("InputBegan",  {Input = Enum.KeyCode.Y})
-            getRemoteEvent():FireServer("InputEnded",  {Input = Enum.KeyCode.Y})
-            getRemoteEvent():FireServer("Attack", "m1")
-            if getStandMorph() then
-                getStandMorph().HumanoidRootPart.CFrame = CFrame.lookAt(
-                    npcHRP.Position, npc.Head.Position
-                )
-            end
-            getRootPart().CFrame = npcHRP.CFrame - npcHRP.CFrame.LookVector * (offsetZ or 2)
-                + Vector3.new(0, offsetY or 20, 0)
-        end)
-    end
-
-    xpConn:Disconnect()
-    moneyConn:Disconnect()
-end
-
--- resolved from u453 — whitesnake quest phase
-local function doWhitesnakePhase()
-    if PlayerStand.Value ~= "Whitesnake" or Backpack:FindFirstChild("Green Baby") then return end
-    if not getStandMorph() then
-        repeat task.wait() toggleStand() until getStandMorph() or not autoMIHEnabled
-    end
-    firePucciDialogues()
-    fireMIHDialogues()
-    PlayerGui:WaitForChild("HUD")
-
-    local q = getQuests()
-
-    if q["Defeat 30 Thugs (Dio's Plan)"] then
-        repeat task.wait() killNPC("Thug", 0, 20)
-        until not getQuests()["Defeat 30 Thugs (Dio's Plan)"] or not autoMIHEnabled
-        if not autoMIHEnabled then return end
-        task.wait(0.35)
-        doWhitesnakePhase()
-    end
-    if q["Defeat 25 Alpha Thugs (Dio's Plan)"] then
-        repeat task.wait() killNPC("Alpha Thug", 0, 20)
-        until not getQuests()["Defeat 25 Alpha Thugs (Dio's Plan)"] or not autoMIHEnabled
-        if not autoMIHEnabled then return end
-        task.wait(0.35)
-        doWhitesnakePhase()
-    end
-    if q["Defeat 20 Corrupt Police (Dio's Plan)"] then
-        repeat task.wait() killNPC("Corrupt Police", 0, 20)
-        until not getQuests()["Defeat 20 Corrupt Police (Dio's Plan)"] or not autoMIHEnabled
-        if not autoMIHEnabled then return end
-        task.wait(0.4)
-        doWhitesnakePhase()
-    end
-    if q["Defeat 15 Zombie Henchman (Dio's Plan)"] then
-        repeat task.wait() killNPC("Zombie Henchman", 0, 13)
-        until not getQuests()["Defeat 15 Zombie Henchman (Dio's Plan)"] or not autoMIHEnabled
-        if not autoMIHEnabled then return end
-        task.wait(0.4)
-        doWhitesnakePhase()
-        task.wait(0.5)
-        getCharacter().Head:Destroy()
-    end
-    task.wait(2)
-    if q["Defeat 10 Vampires (Dio's Plan)"] then
-        repeat task.wait() killNPC("Vampire", 0, 14)
-        until not getQuests()["Defeat 10 Vampires (Dio's Plan)"] or not autoMIHEnabled
-        if not autoMIHEnabled then return end
-        teleportUp() task.wait(0.4)
-        teleportUp() task.wait(0.4)
-        doWhitesnakePhase()
-        task.wait(0.4)
-    end
-end
-
--- resolved from u454 — Heaven Ascension Dio phase
-local function doHeavenAscentionDioPhase()
-    if Backpack:FindFirstChild("Dio's Bone") then return end
-    if not autoMIHEnabled then return end
-    repeat task.wait() until workspace.Living:FindFirstChild("Heaven Ascension Dio") or not autoMIHEnabled
-    if not autoMIHEnabled then return end
-
-    repeat
-        task.wait()
-        killNPC("Heaven Ascension Dio", 2, 45)
-    until Backpack:FindFirstChild("Dio's Bone")
-       or workspace.Living["Heaven Ascension Dio"].Health.Value == 0
-       or not autoMIHEnabled
-
-    if workspace.Living["Heaven Ascension Dio"].Health.Value == 0 then
-        if not autoMIHEnabled then return end
-        teleportUp()
-        workspace.Living["Heaven Ascension Dio"]:Destroy()
-        toggleStand()
-        workspace.Living:WaitForChild("Heaven Ascension Dio")
-        task.wait(0.4)
-        if Backpack:FindFirstChild("Dio's Bone") then
-            fireMIHDialogues()
-            firePucciDialogues()
-        end
-    end
-end
-
--- resolved from u456 — Jotaro phase
-local function doJotaroPhase()
-    if PlayerStand.Value ~= "C-Moon" then return end
-    if not Backpack:FindFirstChild("Dio's Bone") then return end
-    if Backpack:FindFirstChild("Jotaro's Disc") then return end
-    if not autoMIHEnabled then return end
-
-    fireMIHDialogues()
-
-    if not workspace.Living:FindFirstChild("Jotaro Kujo") then
-        if not autoMIHEnabled then return end
-    end
-
-    workspace.Living:WaitForChild("Jotaro Kujo")
-
-    -- Auto-block on parry sounds
-    workspace.Living["Jotaro Kujo"].HumanoidRootPart.ChildAdded:Connect(function(child)
-        if child.Name == "Sound" and (
-            child.SoundId == "rbxassetid://6032844827" or
-            child.SoundId == "rbxassetid://4725629903"
-        ) then
-            getRemoteEvent():FireServer("StartBlocking")
-            wait(1.6)
-            getRemoteEvent():FireServer("StopBlocking")
-        end
-    end)
-
-    repeat
-        task.wait()
-        killNPC("Jotaro Kujo", 2, 45)
-    until Backpack:FindFirstChild("Jotaro's Disc")
-       or workspace.Living["Jotaro Kujo"].Health.Value == 0
-       or not autoMIHEnabled
-
-    if not autoMIHEnabled then return end
-    task.wait(0.4)
-
-    if workspace.Living["Jotaro Kujo"].Health.Value ~= 0 or Backpack:FindFirstChild("Jotaro's Disc") then
-        if Backpack:FindFirstChild("Jotaro's Disc") then
-            if not autoMIHEnabled then return end
-            task.wait(0.5)
-            pcall(function()
-                ReplicatedStorage.Sounds.HeavenBass:Destroy()
-                ReplicatedStorage.Sounds.HeavenBass2:Destroy()
-            end)
-            task.wait(0.4)
-            firePucciDialogues()
-            doJotaroPhase()
-            fireMIHDialogues()
-            doHeavenAscentionDioPhase()
-            task.wait(0.4)
-
-            -- MIH transformation at special coordinates
-            while PlayerStand.Value == "C-Moon" do
-                task.wait()
-                if not autoMIHEnabled then break end
-                getRootPart().CFrame = CFrame.new(
-                    -239.357712, 370.272675, 351.081848,
-                    -1, 0, 0, 0, 1, 0, 0, 0, -1
-                )
-                task.wait(0.25)
-                if not autoMIHEnabled then break end
-                pcall(function()
-                    ReplicatedStorage.Sounds.HeavenBass3:Play()
-                    ReplicatedStorage.Sounds.HeavenBass3:Play()
-                    ReplicatedStorage.Sounds["Double Accel"]:Play()
-                end)
-                task.wait()
-                workspace.Living:WaitForChild(LocalPlayer.Name).RemoteFunction:InvokeServer("ToggleStand","Toggle")
-                if PlayerStand.Value ~= "Made in Heaven" then break end
-            end
-        end
-    else
-        if not autoMIHEnabled then return end
-        teleportUp()
-        task.wait(0.4)
-        workspace.Living["Jotaro Kujo"]:Destroy()
-        workspace.Living:WaitForChild("Jotaro Kujo")
-        task.wait(0.4)
-        doJotaroPhase()
-    end
-end
-
-local function runAutoMIH()
-    while autoMIHEnabled do
-        task.wait()
-
-        -- Phase 1: Whitesnake quests
-        doWhitesnakePhase()
-
-        -- Phase 2: Green Baby
-        if Backpack:FindFirstChild("Green Baby") then
-            workspace.Living:WaitForChild(LocalPlayer.Name).RemoteFunction:InvokeServer("LearnSkill",{
-                Skill = "Worthiness", SkillTreeType = "Character",
-            })
-            getCharacter().Humanoid:EquipTool(Backpack["Green Baby"])
-            task.wait(0.5)
-            getCharacter()["Green Baby"]:Activate()
-            pcall(function()
-                local dg = PlayerGui:WaitForChild("DialogueGui")
-                dg:WaitForChild("Frame"):WaitForChild("ClickContinue").MouseButton1Click:Fire()
-                task.wait()
-                dg:WaitForChild("Frame"):WaitForChild("Options"):WaitForChild("Option1"):WaitForChild("TextButton").MouseButton1Click:Fire()
-            end)
-            task.wait(0.1)
-            doWhitesnakePhase()
-            firePucciDialogues()
-            fireMIHDialogues()
-            workspace.Living:WaitForChild(LocalPlayer.Name).RemoteFunction:InvokeServer("LearnSkill",{Skill="Vitality X",SkillTreeType="Character"})
-            workspace.Living:WaitForChild(LocalPlayer.Name).RemoteFunction:InvokeServer("LearnSkill",{Skill="Sturdiness III",SkillTreeType="Character"})
-            workspace.Living[LocalPlayer.Name].RemoteFunction:InvokeServer("LearnSkill",{Skill="Uppercut to The Moon",SkillTreeType="Stand"})
-            workspace.Living[LocalPlayer.Name].RemoteFunction:InvokeServer("LearnSkill",{Skill="Surface Inversion Punch",SkillTreeType="Stand"})
-            task.wait(0.4)
-        end
-
-        -- Wait for C-Moon
-        repeat task.wait() until PlayerStand.Value == "C-Moon" or not autoMIHEnabled
-        if not autoMIHEnabled then break end
-
-        -- Phase 3: Heaven Ascension Dio
-        if not Backpack:FindFirstChild("Dio's Bone") then
-            fireMIHDialogues()
-            doHeavenAscentionDioPhase()
-        end
-
-        -- Phase 4: Jotaro / MIH
-        repeat task.wait() until Backpack:FindFirstChild("Dio's Bone") or not autoMIHEnabled
-        if not autoMIHEnabled then break end
-
-        fireMIHDialogues()
-        doJotaroPhase()
-
-        if PlayerStand.Value == "Made in Heaven" then
-            notify("Auto MIH", "Made in Heaven obtained!")
-            sendWebhook("Made in Heaven obtained!", true)
-            autoMIHEnabled = false
-            break
-        end
-    end
-end
-
--- ============================================================
---  ANTI-STANDS  (resolved from _AntiTS / _AntiCW)
--- ============================================================
-local antiTSEnabled = false
-local antiCWEnabled = false
-local cwConnected   = false
-
--- resolved from _AntiTS:OnChanged
-local function startAntiTS()
-    local nearbyChars = {}
-    local tsActive    = false
-
-    -- Thread 1: track nearby players
-    task.spawn(function()
-        while antiTSEnabled do
-            task.wait()
-            pcall(function()
-                for _, plr in pairs(Players:GetPlayers()) do
-                    if plr ~= LocalPlayer and plr.Character then
-                        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            nearbyChars[plr.Character] =
-                                (hrp.Position - getRootPart().Position).Magnitude <= 240
-                        end
-                    end
-                end
-            end)
-        end
-    end)
-
-    -- Thread 2: detect timestop animation and dodge
-    task.spawn(function()
-        while antiTSEnabled do
-            task.wait()
-            pcall(function()
-                for char, nearby in pairs(nearbyChars) do
-                    if nearby and char:FindFirstChild("StandMorph") then
-                        local tracks = char.StandMorph.AnimationController:GetPlayingAnimationTracks()
-                        for _, track in pairs(tracks) do
-                            if track.Animation.AnimationId == "rbxassetid://4139325504" and not tsActive then
-                                tsActive = true
-                                local savedCF = getRootPart().CFrame
-                                teleportUpTemp()
-                                task.wait(1.7)
-                                getRootPart().CFrame = savedCF
-                                tsActive = false
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-    end)
-end
-
--- resolved from _AntiCW:OnChanged
-local function startAntiCW()
-    if cwConnected then return end
-    cwConnected = true
-    ClientFX.OnClientEvent:Connect(function(...)
-        if not antiCWEnabled then return end
-        local args = {...}
-        if not args[2] then return end
-        if not args[2].Sound then return end
-        if not args[2].Origin then return end
-        if args[2].Sound ~= "Rage Mode" then return end
-        if string.find(tostring(args[2].Origin), LocalPlayer.Name) then return end
-        local dist = (args[2].Origin.Position - getRootPart().Position).Magnitude
-        local standName = args[2].Origin.Parent:FindFirstChild("Stand Name")
-        if dist <= 100 and standName and standName.Value == "Chariot Requiem" then
-            local savedCF = getRootPart().CFrame
-            teleportUpTemp()
-            task.wait(1.7)
-            getRootPart().CFrame = savedCF
-        end
-    end)
-end
-
--- ============================================================
---  LOCAL PLAYER
--- ============================================================
-local wsEnabled  = false
-local jpEnabled  = false
-local wsSpeed    = 24
-local jpPower    = 24
-local wsConn     = nil
-local jpConn     = nil
-local sprintConn = nil
-
--- ============================================================
---  PITY SHOWER  (resolved from PityShower ScreenGui creation)
--- ============================================================
-if game.CoreGui:FindFirstChild("VantaPityShower") then
-    game.CoreGui.VantaPityShower:Destroy()
-end
-
-local pityGui   = Instance.new("ScreenGui")
-pityGui.Name    = "VantaPityShower"
-pityGui.Parent  = game.CoreGui
-
-local pityFrame = Instance.new("Frame")
-pityFrame.AnchorPoint      = Vector2.new(0.5, 0.5)
-pityFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-pityFrame.BorderSizePixel  = 0
-pityFrame.Position         = UDim2.new(0.5, 0, 0.05, 0)
-pityFrame.Size             = UDim2.new(0, 220, 0, 150)
-pityFrame.Visible          = false
-pityFrame.Parent           = pityGui
-
-local pityCorner = Instance.new("UICorner")
-pityCorner.CornerRadius = UDim.new(0, 10)
-pityCorner.Parent       = pityFrame
-
-local pityTitle = Instance.new("TextLabel")
-pityTitle.Size                  = UDim2.new(1, 0, 0, 28)
-pityTitle.BackgroundTransparency= 1
-pityTitle.Font                  = Enum.Font.GothamBold
-pityTitle.TextSize              = 14
-pityTitle.TextColor3            = Color3.fromRGB(255, 140, 0)
-pityTitle.Text                  = "vanta.dev | Pity Info"
-pityTitle.Parent                = pityFrame
-
-local pityLabels = {}
-local labelTexts = {"Pity Wanted: —","Current Pity: —","Half Pity: —","Pity Farm: OFF","DTrouble: OFF"}
-for i, txt in ipairs(labelTexts) do
-    local lbl = Instance.new("TextLabel")
-    lbl.Size                  = UDim2.new(1, -10, 0, 20)
-    lbl.Position              = UDim2.new(0, 5, 0, 24 + (i-1)*24)
-    lbl.BackgroundTransparency= 1
-    lbl.Font                  = Enum.Font.Gotham
-    lbl.TextSize              = 12
-    lbl.TextColor3            = Color3.fromRGB(220, 220, 220)
-    lbl.TextXAlignment        = Enum.TextXAlignment.Left
-    lbl.Text                  = txt
-    lbl.Parent                = pityFrame
-    table.insert(pityLabels, lbl)
-end
-
-local pityShowerEnabled = false
-local function updatePityShower()
-    if not pityShowerEnabled then return end
-    pityLabels[1].Text = "Pity Wanted: "    .. (pityWanted and tostring(pityWanted) or "—")
-    pityLabels[2].Text = "Current Pity: "   .. roundTwo(getPity())
-    pityLabels[3].Text = "Half Pity: "      .. (halfPityGoal and tostring(halfPityGoal) or "—")
-    pityLabels[4].Text = "Pity Farm: "      .. (pityFarmEnabled and "ON" or "OFF")
-    pityLabels[5].Text = "DTrouble: "       .. (doubleTrouble and "ON" or "OFF")
-end
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if pityShowerEnabled then
-            pcall(updatePityShower)
         end
     end
 end)
 
--- ============================================================
---  RAYFIELD UI TABS
--- ============================================================
-
-local TabMain    = Window:CreateTab("Main",        4483362458)
-local TabLocal   = Window:CreateTab("LocalPlayer", 4483362458)
-local TabMisc    = Window:CreateTab("Misc",        4483362458)
-local TabAnti    = Window:CreateTab("Anti-Stands", 4483362458)
-local TabSettings= Window:CreateTab("Settings",    4483362458)
-
--- ══════════════════════════════════════════════════════════════
---  MAIN TAB — Item Farm
--- ══════════════════════════════════════════════════════════════
-TabMain:CreateSection("Item Farm")
-
-TabMain:CreateDropdown({
-    Name            = "Items to Farm",
-    Options         = {
-        "All",
-        "Mysterious Arrow","Rokakaka",RIB_NAME,
-        "Gold Coin","Diamond","Pure Rokakaka","Quinton's Glove",
-        "Steel Ball","Ancient Scroll","Dio's Diary","Caesar's Headband",
-        "Stone Mask","Lucky Arrow","Lucky Stone Mask","Christmas Present",
-    },
-    CurrentOption   = {},
-    MultipleOptions = true,
-    Callback        = function(v)
-        for k in pairs(selectedFarmItems) do selectedFarmItems[k] = nil end
-        
-        -- Check if "All" is selected
-        local hasAll = false
-        for _, n in ipairs(v) do
-            if n == "All" then
-                hasAll = true
-                break
-            end
-        end
-        
-        if hasAll then
-            -- Select all items except "All" itself
-            selectedFarmItems["Mysterious Arrow"] = true
-            selectedFarmItems["Rokakaka"] = true
-            selectedFarmItems[RIB_NAME] = true
-            selectedFarmItems["Gold Coin"] = true
-            selectedFarmItems["Diamond"] = true
-            selectedFarmItems["Pure Rokakaka"] = true
-            selectedFarmItems["Quinton's Glove"] = true
-            selectedFarmItems["Steel Ball"] = true
-            selectedFarmItems["Ancient Scroll"] = true
-            selectedFarmItems["Dio's Diary"] = true
-            selectedFarmItems["Caesar's Headband"] = true
-            selectedFarmItems["Stone Mask"] = true
-            selectedFarmItems["Lucky Arrow"] = true
-            selectedFarmItems["Lucky Stone Mask"] = true
-            selectedFarmItems["Christmas Present"] = true
-        else
-            for _, n in ipairs(v) do
-                selectedFarmItems[n] = true
-            end
-        end
-    end,
-})
-
-TabMain:CreateDropdown({
-    Name            = "Items to Sell While Farming",
-    Options         = {
-        "All",
-        "Gold Coin","Diamond","Rokakaka","Mysterious Arrow",
-        "Ancient Scroll","Stone Mask","Steel Ball","Quinton's Glove",
-        "Dio's Diary","Caesar's Headband",
-    },
-    CurrentOption   = {},
-    MultipleOptions = true,
-    Callback        = function(v)
-        for k in pairs(selectedSellItems) do selectedSellItems[k] = nil end
-        
-        -- Check if "All" is selected
-        local hasAll = false
-        for _, n in ipairs(v) do
-            if n == "All" then
-                hasAll = true
-                break
-            end
-        end
-        
-        if hasAll then
-            -- Select all items except "All" itself
-            selectedSellItems["Gold Coin"] = true
-            selectedSellItems["Diamond"] = true
-            selectedSellItems["Rokakaka"] = true
-            selectedSellItems["Mysterious Arrow"] = true
-            selectedSellItems["Ancient Scroll"] = true
-            selectedSellItems["Stone Mask"] = true
-            selectedSellItems["Steel Ball"] = true
-            selectedSellItems["Quinton's Glove"] = true
-            selectedSellItems["Dio's Diary"] = true
-            selectedSellItems["Caesar's Headband"] = true
-        else
-            for _, n in ipairs(v) do
-                selectedSellItems[n] = true
-            end
-        end
-    end,
-})
-
-TabMain:CreateDropdown({
-    Name          = "When to Sell",
-    Options       = {
-        "Never",
-        "Whenever",
-        "Selected item is full in inventory. Sell one",
-        "Selected item is full in inventory. Sell all",
-    },
-    CurrentOption = {"Whenever"},
-    Callback      = function(v)
-        sellWhen = type(v) == "table" and (v[1] or "Never") or (v or "Never")
-    end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Buy Items While Farming",
-    CurrentValue = false,
-    Callback     = function(v) buyItemsEnabled = v end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Item Spawn Notifier",
-    CurrentValue = false,
-    Callback     = function(v)
-        itemSpawnNotif = v
-        if v then
-            itemSpawnConn = workspace.Item_Spawns.Items.ChildAdded:Connect(function(item)
-                if not itemSpawnNotif then return end
-                if item:IsA("Model") then
-                    local prox = item:WaitForChild("ProximityPrompt", 2)
-                    if prox then
-                        local itemName = prox.ObjectText
-                        if not notifyOnlySelected or selectedFarmItems[itemName] then
-                            notify("Item Farm", itemName .. " has spawned!")
-                            
-                            -- If item farm is running and we're at safe position, notify user
-                            if itemFarmEnabled then
-                                notify("Item Farm", "New " .. itemName .. " spawned! Will collect shortly...")
-                            end
-                        end
-                    end
-                end
-            end)
-        else
-            if itemSpawnConn then
-                itemSpawnConn:Disconnect()
-                itemSpawnConn = nil
-            end
-        end
-    end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Notify Only Selected Items",
-    CurrentValue = false,
-    Callback     = function(v) notifyOnlySelected = v end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Server Hop on Empty",
-    CurrentValue = false,
-    Callback     = function(v) hopOnEmpty = v end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Enable Item Farm",
-    CurrentValue = false,
-    Callback     = function(v)
-        itemFarmEnabled = v
-        if v then
-            task.spawn(runItemFarm)
-            notify("Item Farm", "Started!")
-        else
-            notify("Item Farm", "Stopped.")
-        end
-    end,
-})
-
--- ══════════════════════════════════════════════════════════════
---  MAIN TAB — Stand Farm
--- ══════════════════════════════════════════════════════════════
-TabMain:CreateSection("Stand Farm")
-
-TabMain:CreateDropdown({
-    Name            = "Stands to Farm",
-    Options         = {
-        "Whitesnake","White Album","King Crimson","The World","Star Platinum",
-        "Crazy Diamond","Gold Experience","Killer Queen","Magician's Red",
-        "Purple Haze","Sticky Fingers","Mr. President","Aerosmith","Cream",
-        "Beach Boy","Red Hot Chili Pepper","The Hand","Anubis","Stone Free",
-        "Six Pistols","Hermit Purple","Hierophant Green","Silver Chariot",
-        "Soft & Wet","The World Alternate Universe","Scary Monsters","Tusk ACT 1","D4C",
-    },
-    CurrentOption   = {},
-    MultipleOptions = true,
-    Callback        = function(v)
-        for k in pairs(selectedStands) do selectedStands[k] = nil end
-        for _, n in ipairs(v) do selectedStands[n] = true end
-    end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Stop on Any Shiny",
-    CurrentValue = false,
-    Callback     = function(v) stopOnShiny = v end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Enable Stand Farm",
-    CurrentValue = false,
-    Callback     = function(v)
-        standFarmEnabled = v
-        if v then
-            task.spawn(startStandFarm)
-            notify("Stand Farm", "Started!")
-        else
-            notify("Stand Farm", "Stopped.")
-        end
-    end,
-})
-
--- ══════════════════════════════════════════════════════════════
---  MAIN TAB — Auto MIH
--- ══════════════════════════════════════════════════════════════
-TabMain:CreateSection("Auto MIH")
-
-TabMain:CreateParagraph({
-    Title   = "Requirements",
-    Content = "You need Whitesnake and Dio's Diary in your inventory.",
-})
-
-TabMain:CreateToggle({
-    Name         = "Enable Auto MIH",
-    CurrentValue = false,
-    Callback     = function(v)
-        autoMIHEnabled = v
-        if v then
-            task.spawn(runAutoMIH)
-            notify("Auto MIH", "Started!")
-        else
-            notify("Auto MIH", "Stopped.")
-        end
-    end,
-})
-
--- ══════════════════════════════════════════════════════════════
---  MAIN TAB — Pity Farm
--- ══════════════════════════════════════════════════════════════
-TabMain:CreateSection("Pity Farm")
-
-TabMain:CreateSlider({
-    Name         = "Pity Goal (1 - 10)",
-    Range        = {1, 10},
-    Increment    = 0.5,
-    CurrentValue = 2,
-    Callback     = function(v)
-        if v <= getPity() then
-            notify("Pity Farm", "Goal must exceed current pity (" .. roundTwo(getPity()) .. ")!")
-        else
-            pityWanted = v
-        end
-    end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Double Trouble",
-    CurrentValue = false,
-    Callback     = function(v) doubleTrouble = v end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Hop Mode (Pity)",
-    CurrentValue = false,
-    Callback     = function(v) hopModePity = v end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Display Pity Info HUD",
-    CurrentValue = false,
-    Callback     = function(v)
-        pityShowerEnabled  = v
-        pityFrame.Visible  = v
-        if v then updatePityShower() end
-    end,
-})
-
-TabMain:CreateToggle({
-    Name         = "Enable Pity Farm",
-    CurrentValue = false,
-    Callback     = function(v)
-        pityFarmEnabled = v
-        if v then
-            task.spawn(runPityFarm)
-            notify("Pity Farm", "Started! Goal: " .. (pityWanted or "not set"))
-        else
-            notify("Pity Farm", "Stopped.")
-        end
-    end,
-})
-
-TabMain:CreateButton({
-    Name     = "Show Current Pity",
-    Callback = function()
-        notify("Pity", "Pity: " .. roundTwo(getPity()) .. " | Raw PityCount: " .. PlayerPity.Value)
-    end,
-})
-
--- ══════════════════════════════════════════════════════════════
---  LOCAL PLAYER TAB
--- ══════════════════════════════════════════════════════════════
-TabLocal:CreateSection("Movement Modifiers")
-
-TabLocal:CreateSlider({
-    Name         = "WalkSpeed",
-    Range        = {1, 200},
-    Increment    = 1,
-    CurrentValue = 24,
-    Callback     = function(v) wsSpeed = v end,
-})
-
-TabLocal:CreateToggle({
-    Name         = "Enable WalkSpeed",
-    CurrentValue = false,
-    Callback     = function(v)
-        wsEnabled = v
-        if v then
-            wsConn = RunService.RenderStepped:Connect(function()
-                pcall(function() getCharacter().Humanoid.WalkSpeed = wsSpeed end)
-            end)
-        else
-            if wsConn then wsConn:Disconnect() wsConn = nil end
-        end
-    end,
-})
-
-TabLocal:CreateSlider({
-    Name         = "JumpPower",
-    Range        = {1, 200},
-    Increment    = 1,
-    CurrentValue = 24,
-    Callback     = function(v) jpPower = v end,
-})
-
-TabLocal:CreateToggle({
-    Name         = "Enable JumpPower",
-    CurrentValue = false,
-    Callback     = function(v)
-        jpEnabled = v
-        if v then
-            jpConn = RunService.RenderStepped:Connect(function()
-                pcall(function() getCharacter().Humanoid.JumpPower = jpPower end)
-            end)
-        else
-            if jpConn then jpConn:Disconnect() jpConn = nil end
-        end
-    end,
-})
-
-TabLocal:CreateToggle({
-    Name         = "Auto-Sprint",
-    CurrentValue = false,
-    Callback     = function(v)
-        if v then
-            sprintConn = RunService.Heartbeat:Connect(function()
-                pcall(function()
-                    if not getCharacter():GetAttribute("Sprinting") then
-                        task.spawn(function()
-                            getRemoteFunction():InvokeServer("ToggleSprinting")
-                        end)
-                    end
-                end)
-            end)
-        else
-            if sprintConn then sprintConn:Disconnect() sprintConn = nil end
-        end
-    end,
-})
-
-TabLocal:CreateSection("Name Hider")
-
-local nameHiderEnabled  = false
-local nameHiderLabel    = nil
-local nameHiderLoop     = nil
-
-TabLocal:CreateToggle({
-    Name         = "Name Hider (Client)",
-    CurrentValue = false,
-    Callback     = function(v)
-        nameHiderEnabled = v
-        if v then
-            task.spawn(function()
-                while nameHiderEnabled do
-                    task.wait()
-                    pcall(function()
-                        local entry = PlayerGui.HUD.Playerlist[LocalPlayer.Name]
-                        if entry then
-                            nameHiderLabel = entry.PlayerName
-                            nameHiderLabel.Text = "Modified By @3DotDigit {Dc}"
-                        end
-                    end)
-                end
-            end)
-        else
-            if nameHiderLabel then
-                nameHiderLabel.Text = LocalPlayer.Name
-            end
-        end
-    end,
-})
-
-TabLocal:CreateSection("Server")
-
-TabLocal:CreateSlider({
-    Name         = "Min Players (Server Hop)",
-    Range        = {1, 20},
-    Increment    = 1,
-    CurrentValue = 2,
-    Callback     = function() end,   -- stored via getupvalue if needed
-})
-
-TabLocal:CreateSlider({
-    Name         = "Max Players (Server Hop)",
-    Range        = {1, 20},
-    Increment    = 1,
-    CurrentValue = 12,
-    Callback     = function() end,
-})
-
-TabLocal:CreateButton({
-    Name     = "Server Hop",
-    Callback = function()
-        notify("Server Hop", "Hopping to a new server...")
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
-    end,
-})
-
--- ══════════════════════════════════════════════════════════════
---  MISCELLANEOUS TAB
--- ══════════════════════════════════════════════════════════════
-TabMisc:CreateSection("Fighting Styles")
-
-TabMisc:CreateButton({
-    Name     = "Reset Fighting Style (3 Diamonds + $5,000)",
-    Callback = function()
-        if hasItem("Diamond", 3) and PlayerMoney.Value >= 5000 then
-            getRemoteEvent():FireServer("EndDialogue",{NPC="Matt",Option="Option1",Dialogue="Dialogue5"})
-            notify("Misc", "Fighting style reset!")
-        else
-            notify("Misc", "Need 3 Diamonds and $5,000!")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Buy Hamon (Caesar's Headband / Clackers / Zeppeli's Hat + $10,000)",
-    Callback = function()
-        if PlayerMoney.Value >= 10000 then
-            local chr = getCharacter()
-            if chr:FindFirstChild("Caesar's Headband") or chr:FindFirstChild("Clackers") or chr:FindFirstChild("Zeppeli's Hat") then
-                getRemoteEvent():FireServer("PromptTriggered", ReplicatedStorage.NewDialogue["Lisa Lisa"])
-                repeat
-                    task.wait()
-                    pcall(function()
-                        PlayerGui.DialogueGui.Frame.ClickContinue.MouseButton1Click:Fire()
-                        task.wait()
-                        PlayerGui.DialogueGui.Frame.Options.Option1.TextButton.MouseButton1Click:Fire()
-                    end)
-                until PlayerSpec.Value ~= "None"
-                notify("Misc", "Hamon style purchased!")
-            else
-                notify("Misc", "Equip Caesar's Headband, Clackers, or Zeppeli's Hat first!")
-            end
-        else
-            notify("Misc", "Need $10,000!")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Buy Boxing (Quinton's Glove + $10,000)",
-    Callback = function()
-        if hasItem("Quinton's Glove") and PlayerMoney.Value >= 10000 then
-            fireDialogue("Quinton","Dialogue5","Option1")
-            notify("Misc", "Boxing purchased!")
-        else
-            notify("Misc", "Need Quinton's Glove and $10,000!")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Buy Boxing Gloves ($1,000)",
-    Callback = function()
-        if PlayerMoney.Value >= 1000 then
-            fireDialogue("Boxing Gloves","Dialogue1","Option1")
-            notify("Misc", "Boxing Gloves purchased!")
-        else
-            notify("Misc", "Need $1,000!")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Buy Sword Style (Ancient Scroll + $10,000)",
-    Callback = function()
-        if hasItem("Ancient Scroll") and PlayerMoney.Value >= 10000 then
-            fireDialogue("Uzurashi","Dialogue5","Option1")
-            notify("Misc", "Sword Style purchased!")
-        else
-            notify("Misc", "Need an Ancient Scroll and $10,000!")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Buy Pluck (requires Sword Style)",
-    Callback = function()
-        if PlayerSpec.Value == "SwordStyle" then
-            fireDialogue("Pluck","Dialogue1","Option1")
-            notify("Misc", "Pluck purchased!")
-        else
-            notify("Misc", "Need the Sword fighting style first!")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Trigger Jesus Dialogue",
-    Callback = function()
-        pcall(function()
-            getRemoteEvent():FireServer("PromptTriggered", ReplicatedStorage.NewDialogue.Jesus)
-        end)
-        notify("Misc", "Jesus dialogue triggered.")
-    end,
-})
-
-TabMisc:CreateSection("Quick Actions")
-
-TabMisc:CreateButton({
-    Name     = "Teleport to Safe Zone",
-    Callback = function()
-        teleportUp()
-        notify("", "Teleported to safe position!")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Desummon Stand",
-    Callback = function()
-        desummonStand()
-        notify("", "Stand desummoned.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Summon Stand",
-    Callback = function()
-        summonStand()
-        notify("", "Stand summoned.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Learn Worthiness",
-    Callback = function()
-        learnWorthiness()
-        notify("", "Worthiness learned.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Buy 1x Rokakaka ($2,500)",
-    Callback = function()
-        if PlayerMoney.Value >= 2500 then
-            getRemoteEvent():FireServer("PurchaseShopItem", {ItemName = "1x Rokakaka"})
-            notify("", "Rokakaka purchased!")
-        else
-            notify("", "Need $2,500!")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Anti Vamp Burn",
-    Callback = function()
-        spawn(function()
-            repeat wait() until game:IsLoaded()
-            local plr = game:GetService("Players").LocalPlayer;
-            while wait() do pcall(function()
-                if plr then
-                    game:GetService("Players").LocalPlayer.PlayerStats.Race.Value = "Human"
-                end
-            end )
-            end
-        end)
-        notify("YBA Script", "Anti Vamp Burn enabled.")
-    end
-})
-
-TabMisc:CreateSection("Stats")
-
-TabMisc:CreateButton({
-    Name     = "Show Stand & Level",
-    Callback = function()
-        notify("Stats",
-            "Stand: "    .. PlayerStand.Value
-         .. " | Lvl: "  .. PlayerLevel.Value
-         .. " | P: "    .. PlayerPrestige.Value
-         .. " | Spec: " .. PlayerSpec.Value
-        )
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Show Money & Pity",
-    Callback = function()
-        notify("Stats",
-            "$" .. PlayerMoney.Value
-         .. " | Pity: " .. roundTwo(getPity())
-         .. " (raw " .. PlayerPity.Value .. ")"
-        )
-    end,
-})
-
--- ══════════════════════════════════════════════════════════════
---  ANTI-STANDS TAB
--- ══════════════════════════════════════════════════════════════
-TabAnti:CreateSection("Anti-Stands")
-
-TabAnti:CreateToggle({
-    Name         = "Anti Timestop",
-    CurrentValue = false,
-    Callback     = function(v)
-        antiTSEnabled = v
-        if v then
-            task.spawn(startAntiTS)
-            notify("Anti-Stands", "Anti Timestop ON.")
-        else
-            notify("Anti-Stands", "Anti Timestop OFF.")
-        end
-    end,
-})
-
-TabAnti:CreateToggle({
-    Name         = "Anti Chariot Requiem (CW)",
-    CurrentValue = false,
-    Callback     = function(v)
-        antiCWEnabled = v
-        if v then
-            startAntiCW()
-            notify("Anti-Stands", "Anti CW ON.")
-        else
-            notify("Anti-Stands", "Anti CW OFF.")
-        end
-    end,
-})
-
--- ══════════════════════════════════════════════════════════════
---  SETTINGS TAB
--- ══════════════════════════════════════════════════════════════
-TabSettings:CreateSection("Webhook")
-
-TabSettings:CreateToggle({
-    Name         = "Enable Webhook Alerts",
-    CurrentValue = false,
-    Callback     = function(v)
-        webhookEnabled = v
-        notify("Settings", "Webhook " .. (v and "enabled." or "disabled."))
-    end,
-})
-
-TabSettings:CreateInput({
-    Name        = "Webhook URL",
-    PlaceholderText = "https://discord.com/api/webhooks/...",
-    RemoveTextAfterFocusLost = false,
-    Callback    = function(v)
-        webhookLink = v
-    end,
-})
-
-TabSettings:CreateInput({
-    Name        = "Ping User ID (optional)",
-    PlaceholderText = "Discord User ID",
-    RemoveTextAfterFocusLost = false,
-    Callback    = function(v)
-        webhookPing = v
-    end,
-})
-
-TabSettings:CreateButton({
-    Name     = "Test Webhook",
-    Callback = function()
-        if webhookLink == "" then
-            notify("Webhook", "Set a webhook URL first!")
-            return
-        end
-        sendWebhook("Webhook test from vanta.dev — it works!", false)
-        notify("Webhook", "Test sent!")
-    end,
-})
-
-TabSettings:CreateSection("Pity Farm Settings")
-
-TabSettings:CreateSlider({
-    Name         = "Pity Roll Retry Cap",
-    Range        = {100, 1000},
-    Increment    = 10,
-    CurrentValue = 680,
-    Callback     = function(v)
-        pityRollLimit = v
-    end,
-})
-
-TabSettings:CreateSection("Info")
-
-TabSettings:CreateButton({
-    Name     = "vanta.dev — Show All Stats",
-    Callback = function()
-        notify("Info",
-            "Stand: "    .. PlayerStand.Value
-         .. " | Lvl: "  .. PlayerLevel.Value
-         .. " | Pity: " .. roundTwo(getPity())
-         .. " | $"      .. PlayerMoney.Value
-         .. " | Spec: " .. PlayerSpec.Value
-        )
-    end,
-})
-
--- ── Done ──────────────────────────────────────────────────────────────────────
-notify("", "vanta.dev loaded successfully!")
-sendWebhook("vanta.dev script loaded.", false)
-
--- ============================================================
---  SERVER HOP SYSTEM (resolved from u273 / u274)
--- ============================================================
-local serverCache       = nil    -- cached server list
-local serverHopRetries  = 77     -- u274
-local serverHopBusy     = false
-
-local function loadServerCache()
-    if isfile and isfile("VantaServers.txt") then
-        local raw = readfile("VantaServers.txt")
-        if raw and raw ~= "" then
-            local ok, data = pcall(function()
-                return HttpService:JSONDecode(raw)
-            end)
-            if ok and data then return data end
-        end
-    end
-    return nil
+local jumpContainer, jumpToggleBg, jumpToggleCircle = createToggle(contentFrame, "Infinite Jump", "Jump infinitely without limit", "infiniteJumpEnabled", setInfiniteJump)
+
+-- Aplica visual do toggle externamente (para usar com atalhos)
+local function updateToggleVisual(toggleBg, toggleCircle, enabled)
+    TweenService:Create(toggleBg, TweenInfo.new(0.2), {
+        BackgroundColor3 = enabled and Color3.fromRGB(100, 180, 255) or Color3.fromRGB(40, 40, 55)
+    }):Play()
+    TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
+        Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    }):Play()
 end
 
-local function saveServerCache(data)
-    if writefile then
-        pcall(function()
-            writefile("VantaServers.txt", HttpService:JSONEncode(data))
-        end)
-    end
-end
-
-local function clearServerCache()
-    if delfile and isfile and isfile("VantaServers.txt") then
-        pcall(function() delfile("VantaServers.txt") end)
-    end
-    serverCache = nil
-end
-
--- Full server hop with cache (resolved from u273)
-local function serverHop()
-    if serverHopBusy then return end
-    serverHopBusy = true
-    notify("Server Hop", "Searching for servers...")
-
-    -- Try loading cache first
-    serverCache = loadServerCache()
-
-    local function collectServers()
-        local collected = {}
-        local cursor    = nil
-        local baseUrl   = "https://games.roblox.com/v1/games/"
-            .. game.PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
-
-        repeat
-            local ok, resp = pcall(function()
-                return request({
-                    Url    = baseUrl .. (cursor and ("&cursor=" .. cursor) or ""),
-                    Method = "GET",
-                })
-            end)
-            if not ok or not resp then break end
-
-            if resp.Body:find("Too many requests") then
-                task.wait(3)
-                continue
-            end
-
-            local parsed
-            ok, parsed = pcall(function()
-                return HttpService:JSONDecode(resp.Body)
-            end)
-            if not ok or not parsed then break end
-
-            if parsed.data then
-                for _, srv in pairs(parsed.data) do
-                    if srv.ping and srv.ping <= 150 and srv.playing and srv.playing <= 15 then
-                        table.insert(collected, srv)
-                    end
-                end
-            end
-
-            cursor = parsed.nextPageCursor
-            task.wait(0.1)
-        until not cursor
-
-        return collected
-    end
-
-    local servers
-    local fromCache = false
-
-    if serverCache and serverCache.data and #serverCache.data > 0 then
-        servers    = serverCache.data
-        fromCache  = true
-        notify("Server Hop", "Using cached servers (" .. #servers .. " available).")
-    else
-        notify("Server Hop", "Collecting servers (this may take a moment)...")
-        servers = collectServers()
-        if #servers > 0 then
-            saveServerCache({ data = servers })
-            notify("Server Hop", "Collected " .. #servers .. " servers.")
-        end
-    end
-
-    if not servers or #servers == 0 then
-        notify("Server Hop", "No suitable servers found!")
-        clearServerCache()
-        serverHopBusy = false
-        return
-    end
-
-    -- Find a valid server
-    for i, srv in ipairs(servers) do
-        if srv.id ~= game.JobId and srv.ping and srv.ping < 100 and srv.playing and srv.playing <= 15 then
-            -- Remove from cache
-            table.remove(servers, i)
-            if #servers > 0 then
-                saveServerCache({ data = servers })
-            else
-                clearServerCache()
-            end
-            notify("Server Hop", "Joining server (ping: " .. srv.ping .. ", players: " .. srv.playing .. ")...")
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, srv.id, LocalPlayer)
-            serverHopBusy = false
-            return
-        end
-    end
-
-    -- No valid server in cache — collect fresh
-    notify("Server Hop", "No valid cached servers — collecting fresh...")
-    clearServerCache()
-    servers = collectServers()
-    if #servers > 0 then
-        saveServerCache({ data = servers })
-        local srv = servers[1]
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, srv.id, LocalPlayer)
-    else
-        notify("Server Hop", "Failed to find any server!")
-    end
-    serverHopBusy = false
-end
-
-TeleportService.TeleportInitFailed:Connect(function(_, result)
-    serverHopRetries -= 1
-    if serverHopRetries <= 0 then
-        notify("Server Hop", "Gave up — clearing cache and retrying...")
-        clearServerCache()
-        serverHopRetries = 77
-        return
-    end
-    if result == Enum.TeleportResult.GameFull or result == Enum.TeleportResult.GameEnded then
-        notify("Server Hop", "Server full/ended — retrying (" .. serverHopRetries .. " left)...")
-        if serverCache and serverCache.data and #serverCache.data > 0 then
-            table.remove(serverCache.data, 1)
-            if #serverCache.data > 0 then
-                saveServerCache(serverCache)
-            else
-                clearServerCache()
-            end
-        end
-        task.wait(1)
-        task.spawn(serverHop)
-    elseif result == Enum.TeleportResult.Failure then
-        notify("Server Hop", "Teleport failed — retrying in 5s...")
-        task.wait(5)
-        task.spawn(serverHop)
+-- Atalhos de teclado: Keypad 1 = Speed, Keypad 2 = Infinite Jump
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.KeypadOne then
+        local newState = not state.speedEnabled
+        state.speedEnabled = newState
+        updateToggleVisual(speedToggleBg, speedToggleCircle, newState)
+        setSpeed(newState)
+    elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
+        local newState = not state.infiniteJumpEnabled
+        state.infiniteJumpEnabled = newState
+        updateToggleVisual(jumpToggleBg, jumpToggleCircle, newState)
+        setInfiniteJump(newState)
     end
 end)
 
--- Hook the Server Hop button in LocalPlayer tab to use full system
-TabLocal:CreateButton({
-    Name     = "Smart Server Hop (with cache)",
-    Callback = function()
-        task.spawn(serverHop)
-    end,
-})
-
-TabLocal:CreateButton({
-    Name     = "Clear Server Cache",
-    Callback = function()
-        clearServerCache()
-        notify("Server Hop", "Server cache cleared.")
-    end,
-})
-
--- ============================================================
---  LEARN ALL STAND SKILLS (resolved from u486)
--- ============================================================
-local function learnAllStandSkills()
-    pcall(function()
-        local sst = LocalPlayer:FindFirstChild("StandSkillTree")
-        if sst then
-            for _, v in pairs(sst:GetChildren()) do
-                if not v.Value then learnSkill(v.Name, "Stand") end
-            end
+-- Trata o pulo infinito via JumpRequest
+UserInputService.JumpRequest:Connect(function()
+    if state.infiniteJumpEnabled then
+        local _, hum = getCharComponents()
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
-        local info = getRemoteFunction():InvokeServer("ReturnSkillInfoInTree", {
-            Type   = "Stand",
-            Skills = { [19] = "Inhale" },
-        })
-        if info and info.Inhale and info.Inhale.AssignedKey ~= "L" then
-            getRemoteFunction():InvokeServer("AssignSkillKey", {
-                Type  = "Stand",
-                Key   = "Enum.KeyCode.L",
-                Skill = "Inhale",
-            })
-        end
-        for _, s in ipairs({
-            "Hamon Breathing","Lung Capacity I","Lung Capacity II","Lung Capacity III",
-            "Lung Capacity IV","Lung Capacity V","Breathing Technique I","Breathing Technique II",
-            "Breathing Technique III","Breathing Technique IV","Breathing Technique V",
-        }) do
-            learnSkill(s, "Spec")
-        end
-    end)
-end
-
--- ============================================================
---  STORYLINE DIALOGUES (resolved from u489)
--- ============================================================
-local function fireStorylineDialogues()
-    local storylines = {
-        "#1","#1","#1","#2","#3","#3","#3","#4",
-        "#5","#6","#7","#8","#9","#10","#11","#11","#12","#14",
-    }
-    local dialogues = {
-        "Dialogue2","Dialogue6","Dialogue6","Dialogue3","Dialogue3","Dialogue3","Dialogue6","Dialogue3",
-        "Dialogue5","Dialogue5","Dialogue5","Dialogue4","Dialogue7","Dialogue6","Dialogue8","Dialogue11","Dialogue3","Dialogue2",
-    }
-    for i = 1, 18 do
-        fireDialogue("Storyline " .. storylines[i], dialogues[i], "Option1")
     end
-end
+end)
 
--- ============================================================
---  BUY HAMON VIA PROXIMITY (resolved from u493)
--- ============================================================
-local function tryGetHamonFull()
-    if PlayerPrestige.Value < 1 then
-        notify("Hamon", "Need at least Prestige 1!")
-        return
-    end
-    if getCharacter():FindFirstChild("Hamon") then
-        notify("Hamon", "You already have Hamon!")
-        return
-    end
-    notify("Hamon", "Attempting to get Hamon...")
-    task.spawn(function()
-        pcall(function()
-            teleportUp()
-            getRootPart().CFrame = CFrame.new(435, 9, -285)
-            repeat
-                task.wait(0.05)
-                fireproximityprompt(Dialogues["Lisa Lisa"]:WaitForChild("ProximityPrompt"))
-            until PlayerGui:FindFirstChild("DialogueGui")
-        end)
-        teleportUp()
-        repeat
-            task.wait(0.25)
-            pcall(function()
-                -- Equip Caesar's Headband if available
-                if Backpack:FindFirstChild("Caesar's Headband") and not getCharacter():FindFirstChild("Caesar's Headband") then
-                    Backpack["Caesar's Headband"].Parent = getCharacter()
-                end
-                teleportUp()
-                PlayerGui.DialogueGui.Frame.ClickContinue.MouseButton1Click:Fire()
-                PlayerGui.DialogueGui.Frame.Options.Option1.TextButton.MouseButton1Click:Fire()
-                task.wait()
-                teleportUp()
-                fireproximityprompt(Dialogues["Lisa Lisa"]:WaitForChild("ProximityPrompt"))
-                PlayerGui.DialogueGui.Frame.ClickContinue.MouseButton1Click:Fire()
-                PlayerGui.DialogueGui.Frame.Options.Option1.TextButton.MouseButton1Click:Fire()
-                teleportUp()
-            end)
-        until getCharacter():FindFirstChild("Hamon")
-
-        if getCharacter():FindFirstChild("Caesar's Headband") then
-            getCharacter()["Caesar's Headband"].Parent = Backpack
-        end
-        learnSkill("Hamon Breathing", "Spec")
-        task.wait()
-        getCharacter().Humanoid.Health = 0.1
-        task.wait()
-        getCharacter().Humanoid.Health = 0
-        waitUntilNewChar()
-        task.wait(1)
-        teleportUp()
-        notify("Hamon", "Hamon obtained!")
-    end)
-end
-
--- ============================================================
---  ADDITIONAL MISC BUTTONS
--- ============================================================
-TabMisc:CreateSection("Storyline & Skills")
-
-TabMisc:CreateButton({
-    Name     = "Fire All Storyline Dialogues",
-    Callback = function()
-        fireStorylineDialogues()
-        notify("Misc", "Storyline dialogues fired.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Learn All Stand Skills",
-    Callback = function()
-        task.spawn(function()
-            learnAllStandSkills()
-            notify("Misc", "All stand skills learned.")
-        end)
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Get Hamon (Prestige 1+ required)",
-    Callback = function()
-        tryGetHamonFull()
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Fire Pucci Dialogues (MIH Setup)",
-    Callback = function()
-        firePucciDialogues()
-        notify("Misc", "Pucci dialogues fired.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Fire MIH Dialogues",
-    Callback = function()
-        fireMIHDialogues()
-        notify("Misc", "MIH dialogues fired.")
-    end,
-})
-
-TabMisc:CreateSection("Sell / Buy")
-
-TabMisc:CreateButton({
-    Name     = "Sell All Gold Coins",
-    Callback = function()
-        task.spawn(function()
-            sellItems({ ["Gold Coin"] = true })
-            notify("Misc", "Gold Coins sold.")
-        end)
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Sell All Diamonds",
-    Callback = function()
-        task.spawn(function()
-            sellItems({ ["Diamond"] = true })
-            notify("Misc", "Diamonds sold.")
-        end)
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Buy 1x Mysterious Arrow ($500)",
-    Callback = function()
-        if PlayerMoney.Value >= 500 then
-            getRemoteEvent():FireServer("PurchaseShopItem", {ItemName = "1x Mysterious Arrow"})
-            notify("Misc", "Mysterious Arrow purchased!")
-        else
-            notify("Misc", "Need $500!")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Buy 1x Rokakaka ($2,500)",
-    Callback = function()
-        if PlayerMoney.Value >= 2500 then
-            getRemoteEvent():FireServer("PurchaseShopItem", {ItemName = "1x Rokakaka"})
-            notify("Misc", "Rokakaka purchased!")
-        else
-            notify("Misc", "Need $2,500!")
-        end
-    end,
-})
-
--- ============================================================
---  SETTINGS — Extended
--- ============================================================
-TabSettings:CreateSection("Stand Farm Settings")
-
-TabSettings:CreateSlider({
-    Name         = "Stand Toggle Retry Cap",
-    Range        = {10, 200},
-    Increment    = 5,
-    CurrentValue = 70,
-    Callback     = function(v)
-        STAND_RETRIES = v
-    end,
-})
-
-TabSettings:CreateSection("Item Farm Settings")
-
-TabSettings:CreateSlider({
-    Name         = "Ping Compensation Cap (ms)",
-    Range        = {0, 500},
-    Increment    = 10,
-    CurrentValue = 220,
-    Callback     = function() end,
-})
-
-TabSettings:CreateSection("Debug")
-
-TabSettings:CreateButton({
-    Name     = "Print Registered Items",
-    Callback = function()
-        local count = 0
-        for name, prompts in pairs(registeredItems) do
-            count += #prompts
-            print("[vanta] " .. name .. ": " .. #prompts .. " spawn(s)")
-        end
-        notify("Debug", tostring(count) .. " registered item spawns. Check output.")
-    end,
-})
-
-TabSettings:CreateButton({
-    Name     = "Print Item Counts",
-    Callback = function()
-        refreshItemCounts()
-        notify("Debug",
-            "Arrows: " .. itemCounts.arrows
-         .. " | Rokas: "  .. itemCounts.rokas
-         .. " | Ribs: "   .. itemCounts.ribs
-        )
-    end,
-})
-
-TabSettings:CreateButton({
-    Name     = "Refresh Item Counts",
-    Callback = function()
-        refreshItemCounts()
-        notify("Debug", "Item counts refreshed.")
-    end,
-})
-
-TabSettings:CreateButton({
-    Name     = "Print All Active Quests",
-    Callback = function()
-        local q = getQuests()
-        local s = ""
-        for name in pairs(q) do s = s .. name .. "\n" end
-        if s == "" then s = "No active quests." end
-        notify("Debug", s)
-        print("[vanta] Active quests:\n" .. s)
-    end,
-})
-
--- ============================================================
---  PITY SHOWER — Live Loop (ensure it updates every frame
---  when enabled; already handled above via task.spawn 0.5s)
--- ============================================================
-
--- ============================================================
---  CHARACTER RESPAWN HANDLER
---  Re-teleport up and refresh counts after each death
--- ============================================================
+-- Reconecta loops após respawn do personagem
 LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
-    cleanupPilot()
-    refreshItemCounts()
-    -- Re-apply walkspeed/jumppower if toggled
-    if wsEnabled and wsConn then wsConn:Disconnect() wsConn = nil end
-    if jpEnabled and jpConn then jpConn:Disconnect() jpConn = nil end
-    if wsEnabled then
-        wsConn = RunService.RenderStepped:Connect(function()
-            pcall(function() getCharacter().Humanoid.WalkSpeed = wsSpeed end)
-        end)
-    end
-    if jpEnabled then
-        jpConn = RunService.RenderStepped:Connect(function()
-            pcall(function() getCharacter().Humanoid.JumpPower = jpPower end)
-        end)
+    charCache.lastUpdate = 0
+    if state.speedEnabled then
+        disconnect("speed")
+        connections.speed = RunService.Heartbeat:Connect(speedLoop)
     end
 end)
 
--- ============================================================
---  FINAL LOAD MESSAGE
--- ============================================================
-print("[vanta.dev] YBA script loaded successfully. Lines: 3000+")
-notify("", "vanta.dev | YBA — loaded! Check all tabs.")
-sendWebhook("vanta.dev script loaded successfully on " .. LocalPlayer.Name .. ".", false)
+-- Pequeno texto de rodapé (opcional)
+local footer = Instance.new("TextLabel")
+footer.Size = UDim2.new(1, 0, 0, 20)
+footer.BackgroundTransparency = 1
+footer.Text = "F1 para abrir/fechar • Keypad 1 = Speed • Keypad 2 = Jump"
+footer.Font = Enum.Font.Gotham
+footer.TextSize = 9
+footer.TextColor3 = Color3.fromRGB(80, 80, 100)
+footer.Parent = contentFrame
 
--- ============================================================
---  EXTENDED STAND FARM — Rib Farm Standalone Helper
---  (mirrors RibFarm.lua functionality inline)
--- ============================================================
-local ribFarmRunning = false
-
-local function countRibcages()
-    local total = 0
-    for _, item in pairs(Backpack:GetChildren()) do
-        if item.Name == RIB_NAME then total += 1 end
+-- Hotkey F1 para mostrar/esconder a GUI
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.F1 then
+        mainFrame.Visible = not mainFrame.Visible
     end
-    local c = LocalPlayer.Character
-    if c then
-        for _, item in pairs(c:GetChildren()) do
-            if item.Name == RIB_NAME then total += 1 end
-        end
-    end
-    return total
-end
-
-local function holdOneRibcage()
-    local chr = getCharacter()
-    unequipAllTools()
-    task.wait(0.1)
-    local equipped = nil
-    for _, item in pairs(Backpack:GetChildren()) do
-        if item.Name == RIB_NAME and item:IsA("Tool") and not equipped then
-            item.Parent = chr
-            equipped = item
-        end
-    end
-    task.wait(0.1)
-    -- Send extras back
-    for _, item in pairs(chr:GetChildren()) do
-        if item.Name == RIB_NAME and item:IsA("Tool") and item ~= equipped then
-            item.Parent = Backpack
-        end
-    end
-    return equipped or chr:FindFirstChild(RIB_NAME)
-end
-
-local function acceptRibDialogue()
-    fireDialogue(RIB_NAME, "Dialogue2", "Option1")
-end
-
-local function useOneRibcage()
-    local before = countRibcages()
-    desummonStand()
-    local rib = holdOneRibcage()
-    if not rib then return false end
-    pcall(function() rib:Activate() end)
-    task.wait(0.15)
-    acceptRibDialogue()
-    local t0 = tick()
-    repeat task.wait(0.2) until countRibcages() < before or tick() - t0 > 3
-    unequipAllTools()
-    task.wait(0.2)
-    desummonStand()
-    return true
-end
-
-local function runRibFarm()
-    -- Ensure worthiness
-    local worthinessVal = LocalPlayer:FindFirstChild("CharacterSkillTree")
-        and LocalPlayer.CharacterSkillTree:FindFirstChild("Worthiness")
-    if worthinessVal and not worthinessVal.Value then
-        local rf = getCharacter():FindFirstChild("RemoteFunction")
-        if rf then
-            pcall(function()
-                rf:InvokeServer("LearnSkill", {Skill="Worthiness",SkillTreeType="Character"})
-            end)
-        end
-        task.wait(0.35)
-    end
-
-    while ribFarmRunning do
-        task.wait(0.2)
-
-        if countRibcages() <= 0 then
-            notify("Rib Farm", "No Rib Cages left — stopping.")
-            ribFarmRunning = false
-            break
-        end
-
-        if not useOneRibcage() then
-            notify("Rib Farm", "Failed to use Rib Cage — stopping.")
-            ribFarmRunning = false
-            break
-        end
-
-        task.wait(0.3)
-
-        if countRibcages() <= 0 then
-            task.wait(0.5)
-            unequipAllTools()
-            desummonStand()
-            notify("Rib Farm", "All Rib Cages used!")
-            ribFarmRunning = false
-            break
-        end
-    end
-end
-
--- Add Rib Farm section to Main tab
-TabMain:CreateSection("Rib Farm (Use All Ribs)")
-
-TabMain:CreateParagraph({
-    Title   = "Rib Farm Info",
-    Content = "Automatically uses all Rib Cages in your inventory one by one. "
-           .. "Useful for getting rib cage stands without using Stand Farm mode.",
-})
-
-TabMain:CreateToggle({
-    Name         = "Enable Rib Farm",
-    CurrentValue = false,
-    Callback     = function(v)
-        ribFarmRunning = v
-        if v then
-            task.spawn(runRibFarm)
-            notify("Rib Farm", "Started! Using all Rib Cages.")
-        else
-            notify("Rib Farm", "Stopped.")
-        end
-    end,
-})
-
-TabMain:CreateButton({
-    Name     = "Count Rib Cages",
-    Callback = function()
-        notify("Rib Farm", "You have " .. countRibcages() .. " Rib Cage(s).")
-    end,
-})
-
--- ============================================================
---  EXTENDED PITY FARM — Pity shower extra labels
--- ============================================================
-
--- Add extra pity info labels to settings
-TabSettings:CreateSection("Pity Info")
-
-TabSettings:CreateButton({
-    Name     = "Show Full Pity Breakdown",
-    Callback = function()
-        notify("Pity",
-            "Raw PityCount: "     .. PlayerPity.Value
-         .. "\nScaled Pity: "     .. roundTwo(getPity())
-         .. "\nPity Goal: "       .. (pityWanted and tostring(pityWanted) or "not set")
-         .. "\nHalf Pity: "       .. (halfPityGoal and tostring(halfPityGoal) or "—")
-         .. "\nDouble Trouble: "  .. (doubleTrouble and "ON" or "OFF")
-         .. "\nPity Farm: "       .. (pityFarmEnabled and "ON" or "OFF")
-        )
-    end,
-})
-
-TabSettings:CreateButton({
-    Name     = "Reset Pity Farm Flags",
-    Callback = function()
-        pityFarmEnabled = false
-        pityFarmDone    = true
-        noRibsFlag      = false
-        noArrowsFlag    = false
-        noRokasFlag     = false
-        dtFarmingFlag   = false
-        dtGuardFlag     = false
-        notify("Pity Farm", "All pity farm flags reset.")
-    end,
-})
-
--- ============================================================
---  EXTENDED LOCAL PLAYER — Noclip toggle
--- ============================================================
-TabLocal:CreateSection("Movement")
-
-TabLocal:CreateToggle({
-    Name         = "Noclip",
-    CurrentValue = false,
-    Callback     = function(v)
-        if v then
-            enableNoclip()
-            notify("LocalPlayer", "Noclip ON.")
-        else
-            disableNoclip()
-            notify("LocalPlayer", "Noclip OFF.")
-        end
-    end,
-})
-
-TabLocal:CreateButton({
-    Name     = "Teleport to Safe Zone",
-    Callback = function()
-        teleportUp()
-        notify("LocalPlayer", "Teleported to safe zone.")
-    end,
-})
-
-TabLocal:CreateButton({
-    Name     = "Teleport Up (temp — fast)",
-    Callback = function()
-        teleportUpTemp()
-        notify("LocalPlayer", "Teleported up (temp).")
-    end,
-})
-
-TabLocal:CreateSection("Invisibility")
-
-TabLocal:CreateToggle({
-    Name         = "Advanced Invisibility",
-    CurrentValue = false,
-    Flag         = "AdvancedInvis",
-    Callback     = function(state)
-        local Players    = game:GetService("Players")
-        local RunService = game:GetService("RunService")
-        local lp         = Players.LocalPlayer
-
-        local function cleanup()
-            getgenv().InvisEnabled = false
-            if getgenv().InvisRenderConn then
-                pcall(function() getgenv().InvisRenderConn:Disconnect() end)
-                getgenv().InvisRenderConn = nil
-            end
-            if getgenv().InvisCharConn then
-                pcall(function() getgenv().InvisCharConn:Disconnect() end)
-                getgenv().InvisCharConn = nil
-            end
-            if getgenv().HoloModel then
-                pcall(function() getgenv().HoloModel:Destroy() end)
-                getgenv().HoloModel = nil
-            end
-            local seat = workspace:FindFirstChild("vantaInvisChair")
-            if seat then pcall(function() seat:Destroy() end) end
-            local chr = lp.Character
-            if chr then
-                for _, part in pairs(chr:GetDescendants()) do
-                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                        part.Transparency = 0
-                    end
-                end
-            end
-            getgenv().InvisInitialized = false
-        end
-
-        if not state then cleanup() return end
-        if getgenv().InvisInitialized then getgenv().InvisEnabled = true return end
-
-        local function setup()
-            local chr = lp.Character or lp.CharacterAdded:Wait()
-            local hrp = chr:WaitForChild("HumanoidRootPart")
-            local hum = chr:WaitForChild("Humanoid")
-
-            getgenv().InvisEnabled = true
-
-            local savedCFrame = hrp.CFrame
-
-            -- Make character transparent locally
-            for _, part in pairs(chr:GetDescendants()) do
-                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                    part.Transparency = 1
-                end
-            end
-
-            -- ── Seat method with weld verification + retry ────────────────────
-            local seatPos = Vector3.new(0, 10000, 0)
-            local torso   = chr:FindFirstChild("UpperTorso") or chr:FindFirstChild("Torso")
-
-            if torso then
-                local success = false
-                local attempts = 0
-                local maxAttempts = 5
-
-                while not success and attempts < maxAttempts do
-                    attempts += 1
-
-                    -- Destroy any previous failed seat
-                    local old = workspace:FindFirstChild("vantaInvisChair")
-                    if old then pcall(function() old:Destroy() end) end
-
-                    -- Teleport character to safe sky position
-                    pcall(function() chr:MoveTo(seatPos) end)
-                    task.wait(0.06)
-
-                    -- Bail if we fell into the void
-                    if hrp.Position.Y < -50 then
-                        pcall(function() hrp.CFrame = savedCFrame end)
-                        break
-                    end
-
-                    -- Create seat and weld to torso
-                    local seat = Instance.new("Seat")
-                    seat.Name        = "vantaInvisChair"
-                    seat.Anchored    = false
-                    seat.CanCollide  = false
-                    seat.Transparency= 1
-                    seat.Position    = seatPos
-                    seat.Parent      = workspace
-
-                    local weld = Instance.new("Weld")
-                    weld.Part0  = seat
-                    weld.Part1  = torso
-                    weld.Parent = seat
-
-                    -- Wait for weld to register on the server
-                    task.wait(0.1)
-
-                    -- Teleport seat back — character should come with it
-                    pcall(function() seat.CFrame = savedCFrame end)
-                    task.wait(0.1)
-
-                    -- Verify: check if HRP is back near original position
-                    local dist = (hrp.Position - savedCFrame.Position).Magnitude
-                    if dist < 10 then
-                        success = true
-                    else
-                        -- Weld didn't hold — retry
-                        warn("[vanta] Invis seat weld failed (attempt "..attempts.."), retrying...")
-                        task.wait(0.05)
-                    end
-                end
-
-                if not success then
-                    -- All attempts failed — abort and clean up
-                    warn("[vanta] Invis seat method failed after "..maxAttempts.." attempts")
-                    local failedSeat = workspace:FindFirstChild("vantaInvisChair")
-                    if failedSeat then pcall(function() failedSeat:Destroy() end) end
-                    pcall(function() hrp.CFrame = savedCFrame end)
-                    for _, part in pairs(chr:GetDescendants()) do
-                        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                            part.Transparency = 0
-                        end
-                    end
-                    getgenv().InvisEnabled    = false
-                    getgenv().InvisInitialized = false
-                    return
-                end
-            end
-
-            -- ── Hologram ──────────────────────────────────────────────────────
-            if getgenv().HoloModel then
-                pcall(function() getgenv().HoloModel:Destroy() end)
-            end
-            local holoModel = Instance.new("Model")
-            holoModel.Name   = "VantaHolo"
-            holoModel.Parent = workspace
-
-            local holoParts = {}
-            for _, part in pairs(chr:GetDescendants()) do
-                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                    local clone        = Instance.new("Part")
-                    clone.Size         = part.Size
-                    clone.CFrame       = part.CFrame
-                    clone.Anchored     = true
-                    clone.CanCollide   = false
-                    clone.CastShadow   = false
-                    clone.Transparency = 0.35
-                    clone.Color        = Color3.fromRGB(100, 190, 255)
-                    clone.Material     = Enum.Material.Neon
-                    clone.Parent       = holoModel
-                    local mesh = part:FindFirstChildWhichIsA("SpecialMesh")
-                    if mesh then mesh:Clone().Parent = clone end
-                    holoParts[part] = clone
-                end
-            end
-
-            getgenv().HoloModel = holoModel
-
-            -- ── RenderStepped ─────────────────────────────────────────────────
-            if getgenv().InvisRenderConn then
-                pcall(function() getgenv().InvisRenderConn:Disconnect() end)
-            end
-
-            getgenv().InvisRenderConn = RunService.RenderStepped:Connect(function()
-                if not getgenv().InvisEnabled then return end
-                for _, part in pairs(chr:GetDescendants()) do
-                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                        part.Transparency = 1
-                    end
-                end
-                for realPart, holoPart in pairs(holoParts) do
-                    if realPart and realPart.Parent and holoPart and holoPart.Parent then
-                        holoPart.CFrame = realPart.CFrame
-                    end
-                end
-            end)
-        end
-
-        setup()
-
-        getgenv().InvisCharConn = lp.CharacterAdded:Connect(function()
-            getgenv().InvisEnabled = false
-            local seat = workspace:FindFirstChild("vantaInvisChair")
-            if seat then pcall(function() seat:Destroy() end) end
-            task.wait(1)
-            if state then setup() end
-        end)
-
-        getgenv().InvisInitialized = true
-    end,
-})
--- ============================================================
---  EXTENDED ANTI-STANDS — extra info
--- ============================================================
-TabAnti:CreateSection("Info")
-
-TabAnti:CreateParagraph({
-    Title   = "Anti Timestop",
-    Content = "Detects the timestop animation (rbxassetid://4139325504) on nearby players "
-           .. "and teleports you 210 studs up for 1.7 seconds to avoid it.",
-})
-
-TabAnti:CreateParagraph({
-    Title   = "Anti Chariot Requiem (CW)",
-    Content = "Listens for the ClientFX Rage Mode event from a Chariot Requiem stand "
-           .. "within 100 studs and teleports you up to avoid it.",
-})
-
--- ============================================================
---  EXTENDED MISC — Item counters
--- ============================================================
-TabMisc:CreateSection("Inventory Info")
-
-TabMisc:CreateButton({
-    Name     = "Count Arrows / Rokas / Ribs",
-    Callback = function()
-        refreshItemCounts()
-        notify("Inventory",
-            "Arrows: " .. itemCounts.arrows
-         .. " | Rokas: " .. itemCounts.rokas
-         .. " | Ribs: "  .. itemCounts.ribs
-        )
-    end,
-})
-
-TabMisc:CreateSection("Anti-AFK")
-
-local antiAfkConn = nil
-TabMisc:CreateToggle({
-    Name         = "Anti-AFK",
-    CurrentValue = false,
-    Flag         = "AntiAFK",
-    Callback     = function(state)
-        if state then
-            local VirtualUser = game:GetService("VirtualUser")
-            antiAfkConn = game:GetService("Players").LocalPlayer.Idled:Connect(function()
-                VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-                task.wait(1)
-                VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-            end)
-            notify("Anti-AFK", "Anti-AFK enabled.")
-        else
-            if antiAfkConn then
-                antiAfkConn:Disconnect()
-                antiAfkConn = nil
-            end
-            notify("Anti-AFK", "Anti-AFK disabled.")
-        end
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Count All Inventory",
-    Callback = function()
-        local counts = {}
-        for _, v in pairs(Backpack:GetChildren()) do
-            counts[v.Name] = (counts[v.Name] or 0) + 1
-        end
-        local out = ""
-        for name, cnt in pairs(counts) do
-            out = out .. name .. ": " .. cnt .. "\n"
-        end
-        if out == "" then out = "Backpack is empty." end
-        notify("Inventory", out)
-        print("[vanta] Inventory:\n" .. out)
-    end,
-})
-
--- ============================================================
---  EXTENDED MISC — Stand utilities
--- ============================================================
-TabMisc:CreateSection("Stand Utilities")
-
-TabMisc:CreateButton({
-    Name     = "Learn All Worthiness Tiers",
-    Callback = function()
-        learnWorthiness()
-        notify("Misc", "Worthiness I-V learned.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Learn Hamon Breathing",
-    Callback = function()
-        learnSkill("Hamon Breathing", "Spec")
-        notify("Misc", "Hamon Breathing learned.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Learn Sprinting",
-    Callback = function()
-        learnSkill("Sprinting", "Character")
-        notify("Misc", "Sprinting learned.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Toggle Stand",
-    Callback = function()
-        toggleStand()
-    end,
-})
-
-TabMisc:CreateToggle({
-    Name         = "Stand Pilot",
-    CurrentValue = false,
-    Callback     = function(v)
-        togglePilot(v)
-    end,
-})
-
-TabMisc:CreateToggle({
-    Name         = "Pilot Speed Changer",
-    CurrentValue = false,
-    Callback     = function(v)
-        pilotSpeedChanger = v
-    end,
-})
-
-TabMisc:CreateSlider({
-    Name         = "Pilot Speed",
-    Range        = {0, 200},
-    Increment    = 1,
-    CurrentValue = 50,
-    Callback     = function(v)
-        pilotSpeed = v
-    end,
-})
-
-TabMisc:CreateSection("Movement")
-
-TabMisc:CreateToggle({
-    Name         = "Fly Toggle",
-    CurrentValue = false,
-    Callback     = function(v)
-        toggleFly(v)
-    end,
-})
-
-TabMisc:CreateSlider({
-    Name         = "Fly Speed",
-    Range        = {10, 500},
-    Increment    = 10,
-    CurrentValue = 50,
-    Callback     = function(v)
-        flySpeed = v
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Unequip All Tools",
-    Callback = function()
-        unequipAllTools()
-        notify("Misc", "All tools unequipped.")
-    end,
-})
-
-TabMisc:CreateButton({
-    Name     = "Kill Character (respawn)",
-    Callback = function()
-        getCharacter().Humanoid.Health = 0
-        notify("Misc", "Character killed — respawning.")
-    end,
-})
-
--- ============================================================
---  EXTENDED SETTINGS — Script information
--- ============================================================
-TabSettings:CreateSection("About")
-
-TabSettings:CreateParagraph({
-    Title   = "vanta.dev | YBA",
-    Content = "Thank you for using the script modified by @3dotDigit",
-})
-
--- ============================================================
---  KEEPALIVE / HEARTBEAT
---  Keeps all RenderStepped connections alive across respawns
--- ============================================================
-RunService.Heartbeat:Connect(function()
-    -- Auto-sprint keepalive (supplement to the connection)
-    -- (the connection is re-established on characteradded if needed)
 end)
 
--- ============================================================
---  DONE
--- ============================================================
-print("[vanta.dev] Full script loaded. All features active.")
+-- Anima entrada
+mainFrame.BackgroundTransparency = 1
+TweenService:Create(mainFrame, TweenInfo.new(0.4), { BackgroundTransparency = 0 }):Play()
+
+print("═══════════════════════════════════════════════")
+print("     SIMPLE HUB - SPEED + INFINITE JUMP       ")
+print("═══════════════════════════════════════════════")
+print("  Experiência: " .. gameName)
+print("  Features: Speed Boost (ajustável) | Infinite Jump")
+print("  Atalhos: Keypad 1 = Speed | Keypad 2 = Jump")
+print("  Pressione F1 para mostrar/ocultar a GUI")
+print("═══════════════════════════════════════════════")
