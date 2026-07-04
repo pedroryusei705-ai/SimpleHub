@@ -473,46 +473,41 @@ local Combat = (function()
 	local attackCooldown = 0.12 -- padrão
 
 	local function startAutoAttack()
-		if autoAttackThread then return end
-		autoAttackRunning = true
-		autoAttackThread = task.spawn(function()
-			local player = game.Players.LocalPlayer
-			local char = player.Character or player.CharacterAdded:Wait()
-			local remote = game.ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
-			local weapon = char:WaitForChild("FistCombat"):WaitForChild("WeaponInfoFolder"):WaitForChild("Fist")
-			local root = char:WaitForChild("HumanoidRootPart")
+    if autoAttackThread then return end
+    autoAttackRunning = true
+    autoAttackThread = task.spawn(function()
+        local player = game.Players.LocalPlayer
+        local char = player.Character or player.CharacterAdded:Wait()
+        local remote = game.ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
+        local weapon = char:WaitForChild("FistCombat"):WaitForChild("WeaponInfoFolder"):WaitForChild("Fist")
+        local root = char:WaitForChild("HumanoidRootPart")
 
-			while autoAttackRunning do
-				task.wait(attackCooldown)
+        while autoAttackRunning do
+            -- Sem wait fixo, apenas yield para não congelar
+            task.wait()
 
-				local target = State.lockedNPC or State.lockedTarget
-				if not target or not target.Parent then
-					target = NPCCache.findClosest()
-					State.lockedTarget = target
-				end
+            local target = State.lockedNPC or State.lockedTarget
+            if not target or not target.Parent then
+                target = NPCCache.findClosest()
+                State.lockedTarget = target
+            end
 
-				if target then
-					local npcRoot = target:FindFirstChild("HumanoidRootPart")
-					if npcRoot then
-						local attackPos = npcRoot.Position
-						if State.autofarmMode == "Behind" then
-							local backVec = -npcRoot.CFrame.LookVector * State.autofarmDistance
-							attackPos = npcRoot.Position + backVec + Vector3.new(0, 2.5, 0)
-						elseif State.autofarmMode == "Above" then
-							attackPos = npcRoot.Position + Vector3.new(0, State.autofarmDistance, 0)
-						end
-						local cframe = CFrame.new(attackPos, npcRoot.Position)
-						remote:FireServer(1, weapon, cframe, true, weapon)
-						remote:FireServer(1, weapon, cframe, true, weapon)
-					end
-				else
-					local cframe = root.CFrame * CFrame.new(0, 0, -3)
-					remote:FireServer(1, weapon, cframe, true, weapon)
-					remote:FireServer(1, weapon, cframe, true, weapon)
-				end
-			end
-		end)
-	end
+            if target then
+                local npcRoot = target:FindFirstChild("HumanoidRootPart")
+                if npcRoot then
+                    -- Usa exatamente o mesmo CFrame do deob (frente do player)
+                    local cframe = root.CFrame * CFrame.new(0, 0, -3)
+                    remote:FireServer(1, weapon, cframe, true, weapon)
+                    remote:FireServer(1, weapon, cframe, true, weapon)
+                end
+            else
+                local cframe = root.CFrame * CFrame.new(0, 0, -3)
+                remote:FireServer(1, weapon, cframe, true, weapon)
+                remote:FireServer(1, weapon, cframe, true, weapon)
+            end
+        end
+    end)
+end
 
 	local function stopAutoAttack()
 		autoAttackRunning = false
