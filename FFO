@@ -43,7 +43,7 @@ local Core = (function()
 
 	local State = {
 		autofarmEnabled    = false,
-		autofarmMode       = "Behind",
+		autofarmMode       = "Above",  -- ALTERADO: padrão agora é "Above"
 		autofarmDistance   = 8,
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
@@ -1215,12 +1215,12 @@ local GUI = (function()
 
 		local _, distSlider, distFill, distLabel, distMin, distMax = createSlider(combatPage, "Farm Distance", 1, 25, State.autofarmDistance)
 		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Camera follows target", State.lockOnEnabled)
-		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Auto Attack (F2)", "Kill Aura (estilo deob)", State.autoAttackEnabled)
+		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Auto Attack (KP1)", "Kill Aura (estilo deob)", State.autoAttackEnabled)
 		
 		createSectionHeader(combatPage, "Movement")
-		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "", State.speedEnabled)
+		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost (N)", "", State.speedEnabled)
 		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
-		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "", State.infiniteJumpEnabled)
+		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump (Y)", "", State.infiniteJumpEnabled)
 
 		-- VISUAL PAGE
 		createSectionHeader(visualPage, "NPC Visuals")
@@ -1592,19 +1592,33 @@ local Input = (function()
 
 		Services.UserInputService.InputBegan:Connect(function(input, processed)
 			if processed then return end
-			if input.KeyCode == Enum.KeyCode.F1 then
+
+			-- F5: Toggle GUI (minimizar)
+			if input.KeyCode == Enum.KeyCode.F5 then
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
-			elseif input.KeyCode == Enum.KeyCode.F2 then
-				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
-			elseif input.KeyCode == Enum.KeyCode.F3 then
-				ToggleFunctions.autofarm(not State.autofarmEnabled)
+
+			-- Keypad1: Kill Aura (Auto Attack)
 			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
-				ToggleFunctions.speed(not State.speedEnabled)
+				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
+
+			-- Keypad2: Autofarm
 			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
+				ToggleFunctions.autofarm(not State.autofarmEnabled)
+
+			-- N: Speed Boost
+			elseif input.KeyCode == Enum.KeyCode.N then
+				ToggleFunctions.speed(not State.speedEnabled)
+
+			-- Y: Infinite Jump
+			elseif input.KeyCode == Enum.KeyCode.Y then
 				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
+
+			-- Keypad0: ESP (mantido)
 			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
 				ToggleFunctions.esp(not State.espEnabled)
+
+			-- Keypad3: Health Bars (mantido)
 			elseif input.KeyCode == Enum.KeyCode.KeypadThree then
 				ToggleFunctions.healthBars(not State.healthBarsEnabled)
 			end
@@ -1677,11 +1691,13 @@ print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
 print("═══════════════════════════════════════════════")
-print("  F1  - Toggle GUI")
-print("  F2  - Toggle Kill Aura")
-print("  F3  - Toggle Autofarm")
-print("  KP1 - Toggle Speed")
-print("  KP2 - Toggle Infinite Jump")
+print("  F5     - Toggle GUI (Minimizar)")
+print("  KP1    - Toggle Kill Aura")
+print("  KP2    - Toggle Autofarm (inicia em Above)")
+print("  N      - Toggle Speed Boost")
+print("  Y      - Toggle Infinite Jump")
+print("  KP0    - Toggle ESP")
+print("  KP3    - Toggle Health Bars")
 print("═══════════════════════════════════════════════")
 
 return {
