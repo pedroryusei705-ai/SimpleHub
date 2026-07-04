@@ -465,49 +465,134 @@ end)()
 --//====================================================--
 
 local Combat = (function()
-	local State = Core.State
-	local CONFIG = Core.CONFIG
-	local Cache = Core.Cache
-	local Services = Core.Services
-	local player = Services.Players.LocalPlayer
+    local State = Core.State
+    local CONFIG = Core.CONFIG
+    local Cache = Core.Cache
+    local Services = Core.Services
+    local player = Services.Players.LocalPlayer
 
-	-- ========== AUTO ATTACK (código idêntico ao MAX.txt) ==========
-	local autoAttackThread = nil
-	local autoAttackRunning = false
-	
-	local function startAutoAttack()
-		if autoAttackThread then return end
-		autoAttackRunning = true
-		autoAttackThread = task.spawn(function()
-			local player = game.Players.LocalPlayer
-			local char = player.Character or player.CharacterAdded:Wait()
-			
-			local remote = game.ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
-			local weapon = char:WaitForChild("FistCombat"):WaitForChild("WeaponInfoFolder"):WaitForChild("Fist")
-			
-			local root = char:WaitForChild("HumanoidRootPart")
-			
-			local function getCFrame()
-			    return root.CFrame * CFrame.new(0, 0, -3)
-			end
-			
-			while autoAttackRunning do
-				task.wait(0.18) -- 🔥 janela ideal
-				
-				-- 💥 burst dentro da janela
-				remote:FireServer(1, weapon, getCFrame(), true, weapon)
-				remote:FireServer(1, weapon, getCFrame(), true, weapon)
-			end
-		end)
-	end
-	
-	local function stopAutoAttack()
-		autoAttackRunning = false
-		if autoAttackThread then
-			task.cancel(autoAttackThread)
-			autoAttackThread = nil
-		end
-	end
+    local autoAttackThread = nil
+    local autoAttackRunning = false
+    local attackCooldown = 0.12 -- padrão
+
+    -- ========== KILL AURA (estilo deob) ==========
+    local function startAutoAttack()
+        if autoAttackThread then return end
+        autoAttackRunning = true
+        autoAttackThread = task.spawn(function()
+            local player = game.Players.LocalPlayer
+            local char = player.Character or player.CharacterAdded:Wait()
+            local remote = game.ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
+            local weapon = char:WaitForChild("FistCombat"):WaitForChild("WeaponInfoFolder"):WaitForChild("Fist")
+            local root = char:WaitForChild("HumanoidRootPart")
+
+            while autoAttackRunning do
+                task.wait(attackCooldown)
+
+                local target = State.lockedNPC or State.lockedTarget
+                if not target or not target.Parent then
+                    target = NPCCache.findClosest()
+                    State.lockedTarget = target
+                end
+
+                if target then
+                    local npcRoot = target:FindFirstChild("HumanoidRootPart")
+                    if npcRoot then
+                        local attackPos = npcRoot.Position
+                        if State.autofarmMode == "Behind" then
+                            local backVec = -npcRoot.CFrame.LookVector * State.autofarmDistance
+                            attackPos = npcRoot.Position + backVec + Vector3.new(0, 2.5, 0)
+                        elseif State.autofarmMode == "Above" then
+                            attackPos = npcRoot.Position + Vector3.new(0, State.autofarmDistance, 0)
+                        end
+                        local cframe = CFrame.new(attackPos, npcRoot.Position)
+                        remote:FireServer(1, weapon, cframe, true, weapon)
+                        remote:FireServer(1, weapon, cframe, true, weapon)
+                    end
+                else
+                    local cframe = root.CFrame * CFrame.new(0, 0, -3)
+                    remote:FireServer(1, weapon, cframe, true, weapon)
+                    remote:FireServer(1, weapon, cframe, true, weapon)
+                end
+            end
+        end)
+    end
+
+    local function stopAutoAttack()
+        autoAttackRunning = false
+        if autoAttackThread then
+            task.cancel(autoAttackThread)
+            autoAttackThread = nil
+        end
+    end
+
+    -- Lock On (suavizado)
+    local function lockOnLoop()
+        if not State.lockOnEnabled then return end
+        local camera = Cache.currentCamera
+        if not camera then return end
+        local target = State.lockedTarget
+        if State.autofarmEnabled and State.lockedNPC then target = State.lockedNPC end
+        if not target or not target.Parent then
+            target = NPCCache.findClosest()
+            State.lockedTarget = target
+        end
+        if target then
+            local npcRoot = target:FindFirstChild("HumanoidRootPart")
+            if npcRoot then
+                local currentPos = camera.CFrame.Position
+                local targetPos = npcRoot.Position
+                local lookAt = Cache.CFrame_new(currentPos, targetPos)
+                camera.CFrame = camera.CFrame:Lerp(lookAt, 0.35)
+            end
+        end
+    end
+
+    -- Auto Farm (posicionamento)
+    local function autofarmLoop()
+        if not State.autofarmEnabled then return end
+        local root = Utils.getCharComponents()
+        if not root then return end
+        if not NPCCache.isValid(State.lockedNPC) then State.lockedNPC = NPCCache.findClosest() end
+        local npc = State.lockedNPC
+        if not npc then return end
+        local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+        if not npcRoot then State.lockedNPC = nil return end
+        root.AssemblyLinearVelocity = Cache.Vector3_zero
+        root.AssemblyAngularVelocity = Cache.Vector3_zero
+        if State.autofarmMode == "Above" then
+            local targetPos = npcRoot.Position + Cache.Vector3_new(0, State.autofarmDistance, 0)
+            root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90),0,0)
+        else
+            local backVec = -npcRoot.CFrame.LookVector * State.autofarmDistance
+            local upVec = Cache.Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
+            local targetPos = npcRoot.Position + backVec + upVec
+            root.CFrame = Cache.CFrame_new(targetPos, npcRoot.Position)
+        end
+    end
+
+    -- Speed Boost (opcional)
+    local function speedLoop()
+        if not State.speedEnabled then return end
+        local root, hum = Utils.getCharComponents()
+        if root and hum then
+            local moveDir = hum.MoveDirection
+            if moveDir.Magnitude > 0 then
+                local curY = root.AssemblyLinearVelocity.Y
+                root.AssemblyLinearVelocity = (moveDir.Unit * State.speedValue) + Cache.Vector3_new(0, curY, 0)
+            end
+        end
+    end
+
+    return {
+        startAutoAttack = startAutoAttack,
+        stopAutoAttack = stopAutoAttack,
+        lockOnLoop = lockOnLoop,
+        autofarmLoop = autofarmLoop,
+        speedLoop = speedLoop,
+        setAttackCooldown = function(v) attackCooldown = v end,
+    }
+end)()
 	-- ========== FIM DO AUTO ATTACK ==========
 
 	-- Lock On (com suavização)
