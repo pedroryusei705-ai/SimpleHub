@@ -482,9 +482,22 @@ local Combat = (function()
         local weapon = char:WaitForChild("FistCombat"):WaitForChild("WeaponInfoFolder"):WaitForChild("Fist")
         local root = char:WaitForChild("HumanoidRootPart")
 
+        -- 🔥 PASSO 1: Ativar estado de combate com um ataque "falso"
+        local function activateCombat()
+            local cframe = root.CFrame * CFrame.new(0, 0, -3)
+            -- Tenta com diferentes parâmetros
+            remote:FireServer(0, weapon, cframe, false, weapon) -- ataque falso
+            task.wait(0.1)
+            remote:FireServer(1, weapon, cframe, false, weapon) -- ataque real (mas sem dano?)
+            task.wait(0.1)
+            remote:FireServer(1, weapon, cframe, true, weapon) -- ataque real
+        end
+
+        activateCombat()
+
+        -- 🔥 PASSO 2: Loop principal com cooldown ajustável
         while autoAttackRunning do
-            -- Sem wait fixo, apenas yield para não congelar
-            task.wait()
+            task.wait(attackCooldown) -- 0.12 ou outro valor
 
             local target = State.lockedNPC or State.lockedTarget
             if not target or not target.Parent then
@@ -492,19 +505,30 @@ local Combat = (function()
                 State.lockedTarget = target
             end
 
+            local cframe
             if target then
                 local npcRoot = target:FindFirstChild("HumanoidRootPart")
                 if npcRoot then
-                    -- Usa exatamente o mesmo CFrame do deob (frente do player)
-                    local cframe = root.CFrame * CFrame.new(0, 0, -3)
-                    remote:FireServer(1, weapon, cframe, true, weapon)
-                    remote:FireServer(1, weapon, cframe, true, weapon)
+                    if State.autofarmMode == "Behind" then
+                        local backVec = -npcRoot.CFrame.LookVector * State.autofarmDistance
+                        local attackPos = npcRoot.Position + backVec + Vector3.new(0, 2.5, 0)
+                        cframe = CFrame.new(attackPos, npcRoot.Position)
+                    elseif State.autofarmMode == "Above" then
+                        local attackPos = npcRoot.Position + Vector3.new(0, State.autofarmDistance, 0)
+                        cframe = CFrame.new(attackPos, npcRoot.Position)
+                    else
+                        cframe = root.CFrame * CFrame.new(0, 0, -3)
+                    end
+                else
+                    cframe = root.CFrame * CFrame.new(0, 0, -3)
                 end
             else
-                local cframe = root.CFrame * CFrame.new(0, 0, -3)
-                remote:FireServer(1, weapon, cframe, true, weapon)
-                remote:FireServer(1, weapon, cframe, true, weapon)
+                cframe = root.CFrame * CFrame.new(0, 0, -3)
             end
+
+            -- Dispara o ataque (spam duplo)
+            remote:FireServer(1, weapon, cframe, true, weapon)
+            remote:FireServer(1, weapon, cframe, true, weapon)
         end
     end)
 end
