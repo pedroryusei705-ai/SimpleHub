@@ -481,58 +481,51 @@ local Combat = (function()
         local remote = game.ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
         local weapon = char:WaitForChild("FistCombat"):WaitForChild("WeaponInfoFolder"):WaitForChild("Fist")
         local root = char:WaitForChild("HumanoidRootPart")
+        local hum = char:WaitForChild("Humanoid")
 
-        -- 🔥 PASSO 1: Ativar estado de combate com um ataque "falso"
-        local function activateCombat()
-            local cframe = root.CFrame * CFrame.new(0, 0, -3)
-            -- Tenta com diferentes parâmetros
-            remote:FireServer(0, weapon, cframe, false, weapon) -- ataque falso
-            task.wait(0.1)
-            remote:FireServer(1, weapon, cframe, false, weapon) -- ataque real (mas sem dano?)
-            task.wait(0.1)
-            remote:FireServer(1, weapon, cframe, true, weapon) -- ataque real
-        end
+        -- 🔥 PASSO 1: Ativa o estado de combate com um ataque "fantasma"
+        local startCF = root.CFrame * CFrame.new(0, 0, -3)
+        remote:FireServer(1, weapon, startCF, true, weapon)
+        task.wait(0.05) -- Pequeno delay para o servidor processar
+        remote:FireServer(1, weapon, startCF, true, weapon)
+        task.wait(0.05)
 
-        activateCombat()
-
-        -- 🔥 PASSO 2: Loop principal com cooldown ajustável
+        -- 🔥 PASSO 2: Loop de ataque massivo (sem cooldown fixo)
         while autoAttackRunning do
-            task.wait(attackCooldown) -- 0.12 ou outro valor
+            -- Yield mínimo para não travar
+            task.wait(0)
 
+            -- Obtém o alvo (prioridade: lockedNPC > lockedTarget > closest)
             local target = State.lockedNPC or State.lockedTarget
             if not target or not target.Parent then
                 target = NPCCache.findClosest()
                 State.lockedTarget = target
             end
 
-            local cframe
+            -- CFrame usado no deob (sempre à frente do personagem)
+            local cframe = root.CFrame * CFrame.new(0, 0, -3)
+
+            -- Se houver alvo, podemos ajustar o CFrame para mirar nele (opcional)
             if target then
                 local npcRoot = target:FindFirstChild("HumanoidRootPart")
                 if npcRoot then
-                    if State.autofarmMode == "Behind" then
-                        local backVec = -npcRoot.CFrame.LookVector * State.autofarmDistance
-                        local attackPos = npcRoot.Position + backVec + Vector3.new(0, 2.5, 0)
-                        cframe = CFrame.new(attackPos, npcRoot.Position)
-                    elseif State.autofarmMode == "Above" then
-                        local attackPos = npcRoot.Position + Vector3.new(0, State.autofarmDistance, 0)
-                        cframe = CFrame.new(attackPos, npcRoot.Position)
-                    else
-                        cframe = root.CFrame * CFrame.new(0, 0, -3)
-                    end
-                else
-                    cframe = root.CFrame * CFrame.new(0, 0, -3)
+                    -- Mantém o CFrame à frente, mas aponta para o NPC (igual ao deob)
+                    cframe = CFrame.new(root.Position, npcRoot.Position) * CFrame.new(0, 0, -3)
                 end
-            else
-                cframe = root.CFrame * CFrame.new(0, 0, -3)
             end
 
-            -- Dispara o ataque (spam duplo)
+            -- 🔥 SPAM MASSIVO (3 chamadas por iteração)
             remote:FireServer(1, weapon, cframe, true, weapon)
             remote:FireServer(1, weapon, cframe, true, weapon)
+            remote:FireServer(1, weapon, cframe, true, weapon)
+
+            -- Força o estado de combate caso o jogo tente sair
+            if hum and hum:GetState() ~= Enum.HumanoidStateType.Combat then
+                hum:ChangeState(Enum.HumanoidStateType.Combat)
+            end
         end
     end)
 end
-
 	local function stopAutoAttack()
 		autoAttackRunning = false
 		if autoAttackThread then
