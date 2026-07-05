@@ -7,7 +7,6 @@
 --//  Kill Aura (estilo deob) + Config System           --
 --//  Resizable & Draggable Window                      --
 --//  + Burst Count Configurable (1-10)                 --
---//  + Sistema de binds configurável via UI            --
 --//====================================================--
 
 local CyberHub = (function()
@@ -39,8 +38,8 @@ local Core = (function()
 		VISUAL_NPC_FOLDER     = workspace:WaitForChild("Alive"),
 		TELEPORT_NPC_FOLDER   = workspace:WaitForChild("LiveNPCS"),
 		CONFIG_FOLDER         = "CyberHubConfigs",
-		WINDOW_MIN_SIZE       = Vector2.new(320, 420),
-		WINDOW_DEFAULT_SIZE   = Vector2.new(380, 520),
+		WINDOW_MIN_SIZE       = Vector2.new(450, 550),
+		WINDOW_DEFAULT_SIZE   = Vector2.new(520, 700),
 	}
 
 	local State = {
@@ -74,16 +73,6 @@ local Core = (function()
 		currentPage        = "combat",
 		isTeleporting      = false,
 		burstCount         = 3,
-		-- Keybinds (valores padrão)
-		keybinds = {
-			toggleGUI       = Enum.KeyCode.F1,
-			toggleAutoAttack= Enum.KeyCode.F2,
-			toggleAutofarm  = Enum.KeyCode.F3,
-			toggleSpeed     = Enum.KeyCode.N,
-			toggleJump      = Enum.KeyCode.Y,
-			toggleESP       = Enum.KeyCode.KeypadZero,
-			toggleHealthBars= Enum.KeyCode.KeypadThree,
-		}
 	}
 
 	local Cache = {
@@ -144,7 +133,7 @@ local Utils = (function()
 	local function animateToggle(bg, circle, enabled)
 		local TweenService = Services.TweenService
 		TweenService:Create(bg, TweenInfo.new(0.2), {
-			BackgroundColor3 = enabled and Cache.Color3_fromRGB(130, 70, 220) or Cache.Color3_fromRGB(50, 50, 70)
+			BackgroundColor3 = enabled and Cache.Color3_fromRGB(100, 180, 255) or Cache.Color3_fromRGB(40, 40, 55)
 		}):Play()
 		TweenService:Create(circle, TweenInfo.new(0.2), {
 			Position = enabled and Cache.UDim2_new(1, -18, 0.5, -8) or Cache.UDim2_new(0, 2, 0.5, -8)
@@ -761,7 +750,6 @@ local ConfigManager = (function()
 			playerESPEnabled=State.playerESPEnabled,
 			fovEnabled=State.fovEnabled,
 			burstCount=State.burstCount,
-			keybinds = State.keybinds,
 		}
 		local path = folder.."/"..name..".json"
 		local success, err = pcall(writefile, path, Http:JSONEncode(data))
@@ -852,200 +840,176 @@ local GUI = (function()
 
 	local screenGui, mainFrame
 	local toggleRefs = {}
-	local bindButtons = {}
 	local resizeActive = false
 	local resizeStartPos, resizeStartSize
+	local selectedProfileBtn = nil
 
-	-- Cores do tema (roxo/preto/transparente)
-	local bgMain = Color3.fromRGB(8, 4, 16)
-	local bgPanel = Color3.fromRGB(25, 15, 45)
-	local bgAccent = Color3.fromRGB(120, 60, 220)
-	local bgAccentLight = Color3.fromRGB(170, 110, 240)
-	local textLight = Color3.fromRGB(235, 225, 245)
-	local textDim = Color3.fromRGB(175, 165, 195)
-	local borderColor = Color3.fromRGB(80, 50, 130)
+	-- Referências para os toggles da config page (para sincronização)
+	local configToggleRefs = {}
 
-	-- Funções auxiliares
+	local function makeResizable(frame)
+		local gripSize = 8
+		local grip = Instance.new("Frame")
+		grip.Size = UDim2.new(0, gripSize, 0, gripSize)
+		grip.Position = UDim2.new(1, -gripSize, 1, -gripSize)
+		grip.BackgroundColor3 = Cache.Color3_fromRGB(80,80,100)
+		grip.BackgroundTransparency = 0.5
+		grip.BorderSizePixel = 0
+		grip.Parent = frame
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,2); corner.Parent = grip
+		grip.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				resizeActive = true
+				resizeStartPos = Services.UserInputService:GetMouseLocation()
+				resizeStartSize = frame.AbsoluteSize
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then resizeActive = false end
+				end)
+			end
+		end)
+		Services.UserInputService.InputChanged:Connect(function(input)
+			if resizeActive and input.UserInputType == Enum.UserInputType.MouseMovement then
+				local delta = Services.UserInputService:GetMouseLocation() - resizeStartPos
+				local newWidth = math.max(CONFIG.WINDOW_MIN_SIZE.X, resizeStartSize.X + delta.X)
+				local newHeight = math.max(CONFIG.WINDOW_MIN_SIZE.Y, resizeStartSize.Y + delta.Y)
+				frame.Size = UDim2.new(0, newWidth, 0, newHeight)
+			end
+		end)
+	end
+
 	local function createSectionHeader(parent, text)
 		local frame = Instance.new("Frame")
-		frame.Size = Cache.UDim2_new(1, 0, 0, 28)
-		frame.BackgroundColor3 = bgAccent
-		frame.BackgroundTransparency = 0.8
+		frame.Size = Cache.UDim2_new(1,0,0,30)
+		frame.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		frame.BorderSizePixel = 0
 		frame.Parent = parent
-
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = frame
 		local label = Instance.new("TextLabel")
-		label.Size = Cache.UDim2_new(1, -20, 1, 0)
-		label.Position = Cache.UDim2_new(0, 10, 0, 0)
+		label.Size = Cache.UDim2_new(1,-15,1,0)
+		label.Position = Cache.UDim2_new(0,10,0,0)
 		label.BackgroundTransparency = 1
 		label.Text = text
 		label.Font = Enum.Font.GothamBold
-		label.TextSize = 13
-		label.TextColor3 = textLight
+		label.TextSize = 12
+		label.TextColor3 = Cache.Color3_fromRGB(180,180,200)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Parent = frame
+		local icon = Instance.new("TextLabel")
+		icon.Size = Cache.UDim2_new(0,15,1,0)
+		icon.BackgroundTransparency = 1
+		icon.Text = "◇"
+		icon.Font = Enum.Font.GothamBold
+		icon.TextSize = 10
+		icon.TextColor3 = Cache.Color3_fromRGB(100,180,255)
+		icon.TextXAlignment = Enum.TextXAlignment.Left
+		icon.Parent = label
 		return frame
 	end
 
-	local function createToggle(parent, labelText, descText, defaultState, bindKey)
+	local function createToggle(parent, labelText, descText, defaultState)
 		local container = Instance.new("Frame")
-		container.Size = Cache.UDim2_new(1, 0, 0, descText and 52 or 40)
-		container.BackgroundColor3 = bgPanel
-		container.BackgroundTransparency = 0.8
+		container.Size = Cache.UDim2_new(1,0,0, descText and 55 or 40)
+		container.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		container.BorderSizePixel = 0
 		container.Parent = parent
-
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 6)
-		corner.Parent = container
-
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = container
 		local label = Instance.new("TextLabel")
-		label.Size = Cache.UDim2_new(0.6, -10, 0, 20)
-		label.Position = Cache.UDim2_new(0, 10, 0, descText and 6 or 10)
+		label.Size = Cache.UDim2_new(0.7,-10,0,20)
+		label.Position = Cache.UDim2_new(0,10,0, descText and 8 or 10)
 		label.BackgroundTransparency = 1
 		label.Text = labelText
 		label.Font = Enum.Font.Gotham
 		label.TextSize = 12
-		label.TextColor3 = textLight
+		label.TextColor3 = Cache.Color3_white
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Parent = container
-
 		if descText then
 			local desc = Instance.new("TextLabel")
-			desc.Size = Cache.UDim2_new(1, -20, 0, 18)
-			desc.Position = Cache.UDim2_new(0, 10, 0, 26)
+			desc.Size = Cache.UDim2_new(1,-20,0,18)
+			desc.Position = Cache.UDim2_new(0,10,0,28)
 			desc.BackgroundTransparency = 1
 			desc.Text = descText
 			desc.Font = Enum.Font.Gotham
 			desc.TextSize = 9
-			desc.TextColor3 = textDim
+			desc.TextColor3 = Cache.Color3_fromRGB(120,120,140)
 			desc.TextWrapped = true
 			desc.Parent = container
 		end
-
 		local toggleBg = Instance.new("Frame")
-		toggleBg.Size = Cache.UDim2_new(0, 38, 0, 20)
-		toggleBg.Position = Cache.UDim2_new(1, -45, 0, descText and 14 or 10)
-		toggleBg.BackgroundColor3 = defaultState and bgAccent or Cache.Color3_fromRGB(50, 50, 75)
-		toggleBg.BackgroundTransparency = 0.6
+		toggleBg.Size = Cache.UDim2_new(0,38,0,20)
+		toggleBg.Position = Cache.UDim2_new(1,-45,0,10)
+		toggleBg.BackgroundColor3 = defaultState and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
 		toggleBg.BorderSizePixel = 0
 		toggleBg.Parent = container
-
-		local bgCorner = Instance.new("UICorner")
-		bgCorner.CornerRadius = UDim.new(1, 0)
-		bgCorner.Parent = toggleBg
-
+		local toggleBgCorner = Instance.new("UICorner"); toggleBgCorner.CornerRadius = UDim.new(1,0); toggleBgCorner.Parent = toggleBg
 		local toggleCircle = Instance.new("Frame")
-		toggleCircle.Size = Cache.UDim2_new(0, 16, 0, 16)
-		toggleCircle.Position = defaultState and Cache.UDim2_new(1, -18, 0.5, -8) or Cache.UDim2_new(0, 2, 0.5, -8)
+		toggleCircle.Size = Cache.UDim2_new(0,16,0,16)
+		toggleCircle.Position = defaultState and Cache.UDim2_new(1,-18,0.5,-8) or Cache.UDim2_new(0,2,0.5,-8)
 		toggleCircle.BackgroundColor3 = Cache.Color3_white
-		toggleCircle.BackgroundTransparency = 0.2
 		toggleCircle.BorderSizePixel = 0
 		toggleCircle.Parent = toggleBg
-
-		local circleCorner = Instance.new("UICorner")
-		circleCorner.CornerRadius = UDim.new(1, 0)
-		circleCorner.Parent = toggleCircle
-
+		local circleCorner = Instance.new("UICorner"); circleCorner.CornerRadius = UDim.new(1,0); circleCorner.Parent = toggleCircle
 		local toggleBtn = Instance.new("TextButton")
-		toggleBtn.Size = Cache.UDim2_new(1, 0, 1, 0)
+		toggleBtn.Size = Cache.UDim2_new(1,0,1,0)
 		toggleBtn.BackgroundTransparency = 1
 		toggleBtn.Text = ""
 		toggleBtn.Parent = toggleBg
-
-		local bindBtn = nil
-		if bindKey then
-			bindBtn = Instance.new("TextButton")
-			bindBtn.Size = Cache.UDim2_new(0, 65, 0, 22)
-			bindBtn.Position = Cache.UDim2_new(1, -120, 0, descText and 14 or 9)
-			bindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 65)
-			bindBtn.BackgroundTransparency = 0.6
-			bindBtn.Text = tostring(bindKey):gsub("Enum.KeyCode.", "")
-			bindBtn.Font = Enum.Font.GothamBold
-			bindBtn.TextSize = 10
-			bindBtn.TextColor3 = textLight
-			bindBtn.BorderSizePixel = 0
-			bindBtn.Parent = container
-
-			local bindCorner = Instance.new("UICorner")
-			bindCorner.CornerRadius = UDim.new(0, 4)
-			bindCorner.Parent = bindBtn
-		end
-
-		return container, toggleBtn, toggleBg, toggleCircle, bindBtn
+		return container, toggleBtn, toggleBg, toggleCircle
 	end
 
 	local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
 		local container = Instance.new("Frame")
-		container.Size = Cache.UDim2_new(1, 0, 0, 48)
-		container.BackgroundColor3 = bgPanel
-		container.BackgroundTransparency = 0.8
+		container.Size = Cache.UDim2_new(1,0,0,50)
+		container.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		container.BorderSizePixel = 0
 		container.Parent = parent
-
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 6)
-		corner.Parent = container
-
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = container
 		local label = Instance.new("TextLabel")
-		label.Size = Cache.UDim2_new(0.6, 0, 0, 18)
-		label.Position = Cache.UDim2_new(0, 10, 0, 4)
+		label.Size = Cache.UDim2_new(0.6,0,0,18)
+		label.Position = Cache.UDim2_new(0,10,0,8)
 		label.BackgroundTransparency = 1
 		label.Text = labelText
 		label.Font = Enum.Font.Gotham
 		label.TextSize = 11
-		label.TextColor3 = textLight
+		label.TextColor3 = Cache.Color3_white
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Parent = container
-
 		local valueLabel = Instance.new("TextLabel")
-		valueLabel.Size = Cache.UDim2_new(0, 50, 0, 18)
-		valueLabel.Position = Cache.UDim2_new(1, -55, 0, 4)
+		valueLabel.Size = Cache.UDim2_new(0,50,0,18)
+		valueLabel.Position = Cache.UDim2_new(1,-55,0,8)
 		valueLabel.BackgroundTransparency = 1
 		valueLabel.Text = tostring(defaultVal)
 		valueLabel.Font = Enum.Font.GothamBold
 		valueLabel.TextSize = 11
-		valueLabel.TextColor3 = bgAccentLight
+		valueLabel.TextColor3 = Cache.Color3_fromRGB(100,180,255)
 		valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 		valueLabel.Parent = container
-
 		local sliderBg = Instance.new("Frame")
-		sliderBg.Size = Cache.UDim2_new(1, -20, 0, 4)
-		sliderBg.Position = Cache.UDim2_new(0, 10, 1, -10)
-		sliderBg.BackgroundColor3 = Cache.Color3_fromRGB(50, 40, 75)
-		sliderBg.BackgroundTransparency = 0.5
+		sliderBg.Size = Cache.UDim2_new(1,-20,0,4)
+		sliderBg.Position = Cache.UDim2_new(0,10,1,-15)
+		sliderBg.BackgroundColor3 = Cache.Color3_fromRGB(30,30,42)
 		sliderBg.BorderSizePixel = 0
 		sliderBg.Parent = container
-
-		local bgCorner = Instance.new("UICorner")
-		bgCorner.CornerRadius = UDim.new(1, 0)
-		bgCorner.Parent = sliderBg
-
-		local fill = Instance.new("Frame")
-		fill.Size = Cache.UDim2_new((defaultVal-minVal)/(maxVal-minVal), 0, 1, 0)
-		fill.BackgroundColor3 = bgAccent
-		fill.BorderSizePixel = 0
-		fill.Parent = sliderBg
-
-		local fillCorner = Instance.new("UICorner")
-		fillCorner.CornerRadius = UDim.new(1, 0)
-		fillCorner.Parent = fill
-
-		local btn = Instance.new("TextButton")
-		btn.Size = Cache.UDim2_new(1, 0, 1, 10)
-		btn.Position = Cache.UDim2_new(0, 0, 0, -5)
-		btn.BackgroundTransparency = 1
-		btn.Text = ""
-		btn.Parent = sliderBg
-
-		return container, btn, fill, valueLabel, minVal, maxVal
+		local sliderBgCorner = Instance.new("UICorner"); sliderBgCorner.CornerRadius = UDim.new(1,0); sliderBgCorner.Parent = sliderBg
+		local sliderFill = Instance.new("Frame")
+		sliderFill.Size = Cache.UDim2_new((defaultVal-minVal)/(maxVal-minVal),0,1,0)
+		sliderFill.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+		sliderFill.BorderSizePixel = 0
+		sliderFill.Parent = sliderBg
+		local fillCorner = Instance.new("UICorner"); fillCorner.CornerRadius = UDim.new(1,0); fillCorner.Parent = sliderFill
+		local sliderBtn = Instance.new("TextButton")
+		sliderBtn.Size = Cache.UDim2_new(1,0,1,10)
+		sliderBtn.Position = Cache.UDim2_new(0,0,0,-5)
+		sliderBtn.BackgroundTransparency = 1
+		sliderBtn.Text = ""
+		sliderBtn.Parent = sliderBg
+		return container, sliderBtn, sliderFill, valueLabel, minVal, maxVal
 	end
 
 	local function createButton(parent, text, color)
 		local btn = Instance.new("TextButton")
-		btn.Size = Cache.UDim2_new(1, 0, 0, 32)
-		btn.BackgroundColor3 = color or bgAccent
-		btn.BackgroundTransparency = 0.7
+		btn.Size = Cache.UDim2_new(1,0,0,35)
+		btn.BackgroundColor3 = color or Cache.Color3_fromRGB(100,180,255)
 		btn.Text = text
 		btn.Font = Enum.Font.GothamBold
 		btn.TextSize = 12
@@ -1053,135 +1017,70 @@ local GUI = (function()
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
 		btn.Parent = parent
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = btn
+		return btn
+	end
 
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 6)
-		corner.Parent = btn
+	local function createSmallButton(parent, text, color, width)
+		local btn = Instance.new("TextButton")
+		btn.Size = Cache.UDim2_new(0, width or 65, 0, 28)
+		btn.BackgroundColor3 = color or Cache.Color3_fromRGB(100,180,255)
+		btn.Text = text
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 10
+		btn.TextColor3 = Cache.Color3_white
+		btn.BorderSizePixel = 0
+		btn.AutoButtonColor = false
+		btn.Parent = parent
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
 		return btn
 	end
 
 	local function createPage(name, parent)
 		local page = Instance.new("ScrollingFrame")
 		page.Name = name
-		page.Size = Cache.UDim2_new(1, -5, 1, 0)
+		page.Size = Cache.UDim2_new(1,-5,1,0)
 		page.BackgroundTransparency = 1
 		page.BorderSizePixel = 0
 		page.ScrollBarThickness = 3
-		page.ScrollBarImageColor3 = Cache.Color3_fromRGB(80, 60, 130)
-		page.CanvasSize = Cache.UDim2_new(0, 0, 0, 0)
+		page.ScrollBarImageColor3 = Cache.Color3_fromRGB(80,80,100)
+		page.CanvasSize = Cache.UDim2_new(0,0,0,0)
 		page.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		page.Visible = false
 		page.Parent = parent
-
 		local layout = Instance.new("UIListLayout")
-		layout.Padding = UDim.new(0, 6)
+		layout.Padding = UDim.new(0,8)
 		layout.SortOrder = Enum.SortOrder.LayoutOrder
 		layout.Parent = page
-
 		local padding = Instance.new("UIPadding")
-		padding.PaddingRight = UDim.new(0, 5)
-		padding.PaddingTop = UDim.new(0, 2)
-		padding.PaddingBottom = UDim.new(0, 2)
+		padding.PaddingRight = UDim.new(0,5)
 		padding.Parent = page
 		return page
 	end
 
-	local function createSidebarBtn(parent, text, name)
+	local function createSidebarBtn(parent, icon, name)
 		local btn = Instance.new("TextButton")
 		btn.Name = name
-		btn.Size = Cache.UDim2_new(0, 44, 0, 44)
-		btn.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
-		btn.BackgroundTransparency = 0.8
-		btn.Text = text
+		btn.Size = Cache.UDim2_new(0,35,0,35)
+		btn.BackgroundColor3 = Cache.Color3_fromRGB(22,22,30)
+		btn.Text = icon
 		btn.Font = Enum.Font.GothamBold
-		btn.TextSize = 13
-		btn.TextColor3 = textDim
+		btn.TextSize = 16
+		btn.TextColor3 = Cache.Color3_fromRGB(120,120,140)
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
 		btn.Parent = parent
-
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 8)
-		corner.Parent = btn
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = btn
 		return btn
 	end
 
-	-- Variáveis globais para as funções de toggle e binds
 	local ToggleFunctions = {}
-	local pendingBind = nil
 
-	local function getKeyName(key)
-		if type(key) == "EnumItem" then
-			return tostring(key):gsub("Enum.KeyCode.", "")
-		else
-			return tostring(key)
-		end
-	end
-
-	local function startBindCapture(bindBtn, keyName, callback)
-		pendingBind = { btn = bindBtn, key = keyName, cb = callback }
-		bindBtn.Text = "..."
-	end
-
-	-- Função para criar abas internas (sub-tabs)
-	local function createSubTabs(parent, tabNames, tabPanels)
-		local tabContainer = Instance.new("Frame")
-		tabContainer.Size = Cache.UDim2_new(1, 0, 0, 36)
-		tabContainer.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
-		tabContainer.BackgroundTransparency = 0.8
-		tabContainer.BorderSizePixel = 0
-		tabContainer.Parent = parent
-
-		local layout = Instance.new("UIListLayout")
-		layout.FillDirection = Enum.FillDirection.Horizontal
-		layout.Padding = UDim.new(0, 4)
-		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.Parent = tabContainer
-
-		local padding = Instance.new("UIPadding")
-		padding.PaddingLeft = UDim.new(0, 4)
-		padding.PaddingTop = UDim.new(0, 4)
-		padding.PaddingBottom = UDim.new(0, 4)
-		padding.Parent = tabContainer
-
-		local buttons = {}
-		for i, name in ipairs(tabNames) do
-			local btn = Instance.new("TextButton")
-			btn.Size = Cache.UDim2_new(0, 100, 0, 28)
-			btn.BackgroundColor3 = (i == 1) and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
-			btn.BackgroundTransparency = 0.6
-			btn.Text = name
-			btn.Font = Enum.Font.GothamBold
-			btn.TextSize = 11
-			btn.TextColor3 = textLight
-			btn.BorderSizePixel = 0
-			btn.AutoButtonColor = false
-			btn.Parent = tabContainer
-
-			local corner = Instance.new("UICorner")
-			corner.CornerRadius = UDim.new(0, 6)
-			corner.Parent = btn
-
-			btn.MouseButton1Click:Connect(function()
-				for j, b in ipairs(buttons) do
-					b.BackgroundColor3 = (j == i) and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
-				end
-				for j, panel in ipairs(tabPanels) do
-					panel.Visible = (j == i)
-				end
-			end)
-			table.insert(buttons, btn)
-		end
-
-		-- Inicialmente mostra o primeiro painel
-		for i, panel in ipairs(tabPanels) do
-			panel.Visible = (i == 1)
-		end
-	end
-
+	-- ============================================================
+	-- BUILD PRINCIPAL
+	-- ============================================================
 	local function build()
 		pcall(function() Core.Services.CoreGui:FindFirstChild(CONFIG.GUI_NAME):Destroy() end)
-
 		screenGui = Instance.new("ScreenGui")
 		screenGui.Name = CONFIG.GUI_NAME
 		screenGui.ResetOnSpawn = false
@@ -1191,484 +1090,519 @@ local GUI = (function()
 		mainFrame = Instance.new("Frame")
 		mainFrame.Name = "MainFrame"
 		mainFrame.Size = UDim2.new(0, CONFIG.WINDOW_DEFAULT_SIZE.X, 0, CONFIG.WINDOW_DEFAULT_SIZE.Y)
-		mainFrame.Position = UDim2.new(0, 20, 0.5, -CONFIG.WINDOW_DEFAULT_SIZE.Y / 2)
-		mainFrame.BackgroundColor3 = bgMain
-		mainFrame.BackgroundTransparency = 0.88
+		mainFrame.Position = UDim2.new(0, 20, 0.5, -CONFIG.WINDOW_DEFAULT_SIZE.Y/2)
+		mainFrame.BackgroundColor3 = Cache.Color3_fromRGB(13,13,18)
 		mainFrame.BorderSizePixel = 0
 		mainFrame.Active = true
 		mainFrame.Draggable = true
 		mainFrame.Parent = screenGui
+		local mainCorner = Instance.new("UICorner"); mainCorner.CornerRadius = UDim.new(0,8); mainCorner.Parent = mainFrame
+		local borderStroke = Instance.new("UIStroke"); borderStroke.Color = Cache.Color3_fromRGB(100,100,120); borderStroke.Thickness = 1; borderStroke.Transparency = 0.5; borderStroke.Parent = mainFrame
+		makeResizable(mainFrame)
 
-		local mainCorner = Instance.new("UICorner")
-		mainCorner.CornerRadius = UDim.new(0, 12)
-		mainCorner.Parent = mainFrame
-
-		local border = Instance.new("UIStroke")
-		border.Color = borderColor
-		border.Thickness = 1
-		border.Transparency = 0.4
-		border.Parent = mainFrame
-
-		-- Cabeçalho
 		local header = Instance.new("Frame")
-		header.Size = Cache.UDim2_new(1, 0, 0, 40)
-		header.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
-		header.BackgroundTransparency = 0.85
+		header.Size = Cache.UDim2_new(1,0,0,35)
+		header.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		header.BorderSizePixel = 0
 		header.Parent = mainFrame
-
-		local headerCorner = Instance.new("UICorner")
-		headerCorner.CornerRadius = UDim.new(0, 12)
-		headerCorner.Parent = header
-
-		local title = Instance.new("TextLabel")
-		title.Size = Cache.UDim2_new(1, -70, 1, 0)
-		title.Position = Cache.UDim2_new(0, 12, 0, 0)
-		title.BackgroundTransparency = 1
-		title.Text = "Cyber Hub v4.7"
-		title.Font = Enum.Font.GothamBold
-		title.TextSize = 16
-		title.TextColor3 = Cache.Color3_white
-		title.TextXAlignment = Enum.TextXAlignment.Left
-		title.Parent = header
-
+		local headerCorner = Instance.new("UICorner"); headerCorner.CornerRadius = UDim.new(0,8); headerCorner.Parent = header
+		local titleLabel = Instance.new("TextLabel")
+		titleLabel.Size = Cache.UDim2_new(1,-60,1,0)
+		titleLabel.Position = Cache.UDim2_new(0,10,0,0)
+		titleLabel.BackgroundTransparency = 1
+		titleLabel.Text = "✦ CYBER HUB v4.7"
+		titleLabel.Font = Enum.Font.GothamBold
+		titleLabel.TextSize = 13
+		titleLabel.TextColor3 = Cache.Color3_white
+		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		titleLabel.Parent = header
 		local closeBtn = Instance.new("TextButton")
-		closeBtn.Size = Cache.UDim2_new(0, 28, 0, 28)
-		closeBtn.Position = Cache.UDim2_new(1, -34, 0.5, -14)
-		closeBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 65)
-		closeBtn.BackgroundTransparency = 0.6
-		closeBtn.Text = "X"
+		closeBtn.Size = Cache.UDim2_new(0,25,0,25)
+		closeBtn.Position = Cache.UDim2_new(1,-30,0,5)
+		closeBtn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+		closeBtn.Text = "×"
 		closeBtn.Font = Enum.Font.GothamBold
-		closeBtn.TextSize = 16
-		closeBtn.TextColor3 = textLight
+		closeBtn.TextSize = 18
+		closeBtn.TextColor3 = Cache.Color3_fromRGB(200,200,210)
 		closeBtn.BorderSizePixel = 0
 		closeBtn.Parent = header
+		local closeCorner = Instance.new("UICorner"); closeCorner.CornerRadius = UDim.new(0,4); closeCorner.Parent = closeBtn
+		closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
-		local closeCorner = Instance.new("UICorner")
-		closeCorner.CornerRadius = UDim.new(0, 6)
-		closeCorner.Parent = closeBtn
-
-		closeBtn.MouseButton1Click:Connect(function()
-			screenGui:Destroy()
-		end)
-
-		-- Sidebar
 		local sidebar = Instance.new("Frame")
-		sidebar.Size = Cache.UDim2_new(0, 54, 1, -46)
-		sidebar.Position = Cache.UDim2_new(0, 4, 0, 42)
-		sidebar.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
-		sidebar.BackgroundTransparency = 0.85
+		sidebar.Size = Cache.UDim2_new(0,45,1,-40)
+		sidebar.Position = Cache.UDim2_new(0,5,0,38)
+		sidebar.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		sidebar.BorderSizePixel = 0
 		sidebar.Parent = mainFrame
-
-		local sidebarCorner = Instance.new("UICorner")
-		sidebarCorner.CornerRadius = UDim.new(0, 8)
-		sidebarCorner.Parent = sidebar
-
+		local sidebarCorner = Instance.new("UICorner"); sidebarCorner.CornerRadius = UDim.new(0,6); sidebarCorner.Parent = sidebar
 		local sidebarLayout = Instance.new("UIListLayout")
-		sidebarLayout.Padding = UDim.new(0, 6)
+		sidebarLayout.Padding = UDim.new(0,5)
 		sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		sidebarLayout.Parent = sidebar
+		local sidebarPadding = Instance.new("UIPadding"); sidebarPadding.PaddingTop = UDim.new(0,8); sidebarPadding.Parent = sidebar
 
-		local sidebarPadding = Instance.new("UIPadding")
-		sidebarPadding.PaddingTop = UDim.new(0, 8)
-		sidebarPadding.PaddingBottom = UDim.new(0, 8)
-		sidebarPadding.Parent = sidebar
+		local combatBtn = createSidebarBtn(sidebar, "⚔", "CombatBtn")
+		local visualBtn = createSidebarBtn(sidebar, "👁", "VisualBtn")
+		local teleportBtn = createSidebarBtn(sidebar, "📍", "TeleportBtn")
+		local configBtn = createSidebarBtn(sidebar, "⚙", "ConfigBtn")
+		local miscBtn = createSidebarBtn(sidebar, "🔧", "MiscBtn")
 
-		-- Botões laterais (sem emojis)
-		local combatBtn = createSidebarBtn(sidebar, "CMB", "CombatBtn")
-		local visualBtn = createSidebarBtn(sidebar, "VIS", "VisualBtn")
-		local teleportBtn = createSidebarBtn(sidebar, "TLP", "TeleportBtn")
-		local configBtn = createSidebarBtn(sidebar, "CFG", "ConfigBtn")
-		local miscBtn = createSidebarBtn(sidebar, "MSC", "MiscBtn")
-
-		-- Área de conteúdo
 		local contentArea = Instance.new("Frame")
-		contentArea.Size = Cache.UDim2_new(1, -68, 1, -46)
-		contentArea.Position = Cache.UDim2_new(0, 62, 0, 42)
+		contentArea.Size = Cache.UDim2_new(1,-60,1,-40)
+		contentArea.Position = Cache.UDim2_new(0,55,0,38)
 		contentArea.BackgroundTransparency = 1
 		contentArea.Parent = mainFrame
 
-		-- Páginas principais
 		local combatPage = createPage("CombatPage", contentArea)
 		local visualPage = createPage("VisualPage", contentArea)
 		local teleportPage = createPage("TeleportPage", contentArea)
 		local configPage = createPage("ConfigPage", contentArea)
 		local miscPage = createPage("MiscPage", contentArea)
 
-		-- ========== PÁGINA COMBAT ==========
-		-- Criar painéis para sub-abas
-		local combatPanels = {}
-		local combatTabNames = {"Autofarm", "Kill Aura", "Farm Config"}
-		for i = 1, 3 do
-			local panel = Instance.new("ScrollingFrame")
-			panel.Size = Cache.UDim2_new(1, 0, 1, -40)
-			panel.Position = Cache.UDim2_new(0, 0, 0, 40)
-			panel.BackgroundTransparency = 1
-			panel.BorderSizePixel = 0
-			panel.CanvasSize = Cache.UDim2_new(0, 0, 0, 0)
-			panel.AutomaticCanvasSize = Enum.AutomaticSize.Y
-			panel.ScrollBarThickness = 0
-			panel.Parent = combatPage
-			table.insert(combatPanels, panel)
-
-			local layout = Instance.new("UIListLayout")
-			layout.Padding = UDim.new(0, 6)
-			layout.SortOrder = Enum.SortOrder.LayoutOrder
-			layout.Parent = panel
-
-			local padding = Instance.new("UIPadding")
-			padding.PaddingTop = UDim.new(0, 4)
-			padding.PaddingBottom = UDim.new(0, 4)
-			padding.PaddingLeft = UDim.new(0, 4)
-			padding.PaddingRight = UDim.new(0, 4)
-			padding.Parent = panel
+		local allPages = {combatPage, visualPage, teleportPage, configPage, miscPage}
+		local allBtns = {combatBtn, visualBtn, teleportBtn, configBtn, miscBtn}
+		local function switchPage(targetPage, targetBtn)
+			for _,p in ipairs(allPages) do p.Visible = false end
+			for _,b in ipairs(allBtns) do
+				b.BackgroundColor3 = Cache.Color3_fromRGB(22,22,30)
+				b.TextColor3 = Cache.Color3_fromRGB(120,120,140)
+			end
+			targetPage.Visible = true
+			targetBtn.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+			targetBtn.TextColor3 = Cache.Color3_white
 		end
-		createSubTabs(combatPage, combatTabNames, combatPanels)
+		combatBtn.MouseButton1Click:Connect(function() switchPage(combatPage, combatBtn) end)
+		visualBtn.MouseButton1Click:Connect(function() switchPage(visualPage, visualBtn) end)
+		teleportBtn.MouseButton1Click:Connect(function() switchPage(teleportPage, teleportBtn) end)
+		configBtn.MouseButton1Click:Connect(function() switchPage(configPage, configBtn) end)
+		miscBtn.MouseButton1Click:Connect(function() switchPage(miscPage, miscBtn) end)
+		switchPage(combatPage, combatBtn)
 
-		local autofarmPanel = combatPanels[1]
-		local killAuraPanel = combatPanels[2]
-		local farmConfigPanel = combatPanels[3]
-
-		-- Autofarm
-		local _, autofarmToggle, autofarmBg, autofarmCircle, autofarmBind = createToggle(autofarmPanel, "Auto Farm", "Farm nearest NPC", State.autofarmEnabled, State.keybinds.toggleAutofarm)
-		local _, lockOnToggle, lockOnBg, lockOnCircle, lockOnBind = createToggle(autofarmPanel, "Lock On", "Camera follows target", State.lockOnEnabled, nil)
-
-		-- Kill Aura
-		local _, autoAttackToggle, autoAttackBg, autoAttackCircle, autoAttackBind = createToggle(killAuraPanel, "Auto Attack", "Kill Aura", State.autoAttackEnabled, State.keybinds.toggleAutoAttack)
-		local _, speedToggle, speedBg, speedCircle, speedBind = createToggle(killAuraPanel, "Speed Boost", "", State.speedEnabled, State.keybinds.toggleSpeed)
-		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(killAuraPanel, "Speed Value", 50, 300, State.speedValue)
-
-		-- Farm Config
+		-- ============================================================
+		-- COMBAT PAGE
+		-- ============================================================
+		createSectionHeader(combatPage, "Auto Farm")
+		local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(combatPage, "Auto Farm", "Farm nearest NPC", State.autofarmEnabled)
+		
 		local modeContainer = Instance.new("Frame")
-		modeContainer.Size = Cache.UDim2_new(1, 0, 0, 56)
-		modeContainer.BackgroundColor3 = bgPanel
-		modeContainer.BackgroundTransparency = 0.8
+		modeContainer.Size = Cache.UDim2_new(1,0,0,60)
+		modeContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		modeContainer.BorderSizePixel = 0
-		modeContainer.Parent = farmConfigPanel
-
-		local modeCorner = Instance.new("UICorner")
-		modeCorner.CornerRadius = UDim.new(0, 6)
-		modeCorner.Parent = modeContainer
-
+		modeContainer.Parent = combatPage
+		local modeCorner = Instance.new("UICorner"); modeCorner.CornerRadius = UDim.new(0,6); modeCorner.Parent = modeContainer
 		local modeLabel = Instance.new("TextLabel")
-		modeLabel.Size = Cache.UDim2_new(1, -20, 0, 20)
-		modeLabel.Position = Cache.UDim2_new(0, 10, 0, 4)
+		modeLabel.Size = Cache.UDim2_new(1,-20,0,20)
+		modeLabel.Position = Cache.UDim2_new(0,10,0,5)
 		modeLabel.BackgroundTransparency = 1
 		modeLabel.Text = "Farm Position"
 		modeLabel.Font = Enum.Font.GothamBold
 		modeLabel.TextSize = 11
-		modeLabel.TextColor3 = textDim
+		modeLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
 		modeLabel.TextXAlignment = Enum.TextXAlignment.Left
 		modeLabel.Parent = modeContainer
-
 		local modeBtnFrame = Instance.new("Frame")
-		modeBtnFrame.Size = Cache.UDim2_new(1, -20, 0, 28)
-		modeBtnFrame.Position = Cache.UDim2_new(0, 10, 0, 24)
+		modeBtnFrame.Size = Cache.UDim2_new(1,-20,0,30)
+		modeBtnFrame.Position = Cache.UDim2_new(0,10,0,25)
 		modeBtnFrame.BackgroundTransparency = 1
 		modeBtnFrame.Parent = modeContainer
-
 		local modeLayout = Instance.new("UIListLayout")
 		modeLayout.FillDirection = Enum.FillDirection.Horizontal
-		modeLayout.Padding = UDim.new(0, 8)
+		modeLayout.Padding = UDim.new(0,8)
 		modeLayout.Parent = modeBtnFrame
-
 		local behindBtn = Instance.new("TextButton")
-		behindBtn.Size = Cache.UDim2_new(0, 130, 0, 26)
-		behindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 65)
-		behindBtn.BackgroundTransparency = 0.6
+		behindBtn.Size = Cache.UDim2_new(0,130,0,28)
+		behindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40,40,55)
 		behindBtn.Text = "Behind"
 		behindBtn.Font = Enum.Font.GothamBold
 		behindBtn.TextSize = 11
-		behindBtn.TextColor3 = textDim
+		behindBtn.TextColor3 = Cache.Color3_fromRGB(180,180,200)
 		behindBtn.BorderSizePixel = 0
 		behindBtn.AutoButtonColor = false
 		behindBtn.Parent = modeBtnFrame
-
-		local behindCorner = Instance.new("UICorner")
-		behindCorner.CornerRadius = UDim.new(0, 6)
-		behindCorner.Parent = behindBtn
-
+		local behindCorner = Instance.new("UICorner"); behindCorner.CornerRadius = UDim.new(0,6); behindCorner.Parent = behindBtn
 		local aboveBtn = behindBtn:Clone()
 		aboveBtn.Text = "Above"
 		aboveBtn.Parent = modeBtnFrame
-
 		local function updateModeVisuals()
 			local isBehind = (State.autofarmMode == "Behind")
-			behindBtn.BackgroundColor3 = isBehind and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
-			behindBtn.TextColor3 = isBehind and Cache.Color3_white or textDim
-			aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40, 30, 65) or bgAccent
-			aboveBtn.TextColor3 = isBehind and textDim or Cache.Color3_white
+			behindBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
+			behindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
+			aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
+			aboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			-- Sync config page mode buttons if they exist
+			if configModeBehindBtn and configModeAboveBtn then
+				configModeBehindBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
+				configModeBehindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
+				configModeAboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
+				configModeAboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			end
 		end
 		behindBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Behind"; updateModeVisuals() end)
 		aboveBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Above"; updateModeVisuals() end)
 		updateModeVisuals()
 
-		local _, distSlider, distFill, distLabel, distMin, distMax = createSlider(farmConfigPanel, "Farm Distance", 1, 25, State.autofarmDistance)
-		local _, burstSlider, burstFill, burstLabel, burstMin, burstMax = createSlider(farmConfigPanel, "Burst Count", 1, 10, State.burstCount)
+		local _, distSlider, distFill, distLabel, distMin, distMax = createSlider(combatPage, "Farm Distance", 1, 25, State.autofarmDistance)
+		local _, burstSlider, burstFill, burstLabel, burstMin, burstMax = createSlider(combatPage, "Burst Count", 1, 10, State.burstCount)
+		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Camera follows target", State.lockOnEnabled)
+		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Kill Aura (F2)", "Auto attack nearest", State.autoAttackEnabled)
+		
+		createSectionHeader(combatPage, "Movement")
+		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "", State.speedEnabled)
+		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
+		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "", State.infiniteJumpEnabled)
 
-		-- ========== PÁGINA VISUAL ==========
+		-- ============================================================
+		-- VISUAL PAGE
+		-- ============================================================
 		createSectionHeader(visualPage, "NPC Visuals")
-		local _, espToggle, espBg, espCircle, espBind = createToggle(visualPage, "ESP Highlights", "", State.espEnabled, State.keybinds.toggleESP)
-		local _, tracersToggle, tracersBg, tracersCircle, tracersBind = createToggle(visualPage, "Tracers", "", State.tracersEnabled, nil)
-		local _, healthBarsToggle, healthBarsBg, healthBarsCircle, healthBarsBind = createToggle(visualPage, "Health Bars", "", State.healthBarsEnabled, State.keybinds.toggleHealthBars)
-
+		local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "", State.espEnabled)
+		local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "", State.tracersEnabled)
+		local _, healthBarsToggle, healthBarsBg, healthBarsCircle = createToggle(visualPage, "Health Bars", "", State.healthBarsEnabled)
 		createSectionHeader(visualPage, "Player Visuals")
-		local _, playerESPToggle, playerESPBg, playerESPCircle, playerESPBind = createToggle(visualPage, "Player ESP", "", State.playerESPEnabled, nil)
-		local _, fovToggle, fovBg, fovCircle, fovBind = createToggle(visualPage, "FOV Circle", "", State.fovEnabled, nil)
+		local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "", State.playerESPEnabled)
+		local _, fovToggle, fovBg, fovCircle = createToggle(visualPage, "FOV Circle", "", State.fovEnabled)
 
-		-- ========== PÁGINA TELEPORT ==========
+		-- ============================================================
+		-- TELEPORT PAGE
+		-- ============================================================
 		createSectionHeader(teleportPage, "Safe Teleport")
 		local tpInfo = Instance.new("Frame")
-		tpInfo.Size = Cache.UDim2_new(1, 0, 0, 50)
-		tpInfo.BackgroundColor3 = bgAccent
-		tpInfo.BackgroundTransparency = 0.85
+		tpInfo.Size = Cache.UDim2_new(1,0,0,55)
+		tpInfo.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+		tpInfo.BackgroundTransparency = 0.9
 		tpInfo.BorderSizePixel = 0
 		tpInfo.Parent = teleportPage
-
-		local tpCorner = Instance.new("UICorner")
-		tpCorner.CornerRadius = UDim.new(0, 6)
-		tpCorner.Parent = tpInfo
-
-		local tpLabel = Instance.new("TextLabel")
-		tpLabel.Size = Cache.UDim2_new(1, -20, 1, 0)
-		tpLabel.Position = Cache.UDim2_new(0, 10, 0, 0)
-		tpLabel.BackgroundTransparency = 1
-		tpLabel.Text = "Ultra Smooth Teleport (Anti-Kick)\nClick any NPC to teleport safely"
-		tpLabel.Font = Enum.Font.Gotham
-		tpLabel.TextSize = 10
-		tpLabel.TextColor3 = Cache.Color3_white
-		tpLabel.TextWrapped = true
-		tpLabel.TextXAlignment = Enum.TextXAlignment.Left
-		tpLabel.Parent = tpInfo
-
-		local refreshBtn = createButton(teleportPage, "Refresh NPC List", Cache.Color3_fromRGB(80, 200, 120))
-
+		local tpInfoCorner = Instance.new("UICorner"); tpInfoCorner.CornerRadius = UDim.new(0,6); tpInfoCorner.Parent = tpInfo
+		local tpInfoLabel = Instance.new("TextLabel")
+		tpInfoLabel.Size = Cache.UDim2_new(1,-20,1,0)
+		tpInfoLabel.Position = Cache.UDim2_new(0,10,0,0)
+		tpInfoLabel.BackgroundTransparency = 1
+		tpInfoLabel.Text = "📍 Ultra Smooth Teleport (Anti-Kick)\nClick any NPC to teleport safely"
+		tpInfoLabel.Font = Enum.Font.Gotham
+		tpInfoLabel.TextSize = 10
+		tpInfoLabel.TextColor3 = Cache.Color3_white
+		tpInfoLabel.TextWrapped = true
+		tpInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+		tpInfoLabel.Parent = tpInfo
+		local refreshBtn = createButton(teleportPage, "🔄 Refresh NPC List", Cache.Color3_fromRGB(80,200,120))
 		local npcListFrame = Instance.new("ScrollingFrame")
-		npcListFrame.Size = Cache.UDim2_new(1, 0, 0, 200)
-		npcListFrame.BackgroundColor3 = bgPanel
-		npcListFrame.BackgroundTransparency = 0.8
+		npcListFrame.Size = Cache.UDim2_new(1,0,0,200)
+		npcListFrame.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		npcListFrame.BorderSizePixel = 0
-		npcListFrame.CanvasSize = Cache.UDim2_new(0, 0, 0, 0)
+		npcListFrame.CanvasSize = Cache.UDim2_new(0,0,0,0)
 		npcListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		npcListFrame.ScrollBarThickness = 3
 		npcListFrame.Parent = teleportPage
-
-		local npcListCorner = Instance.new("UICorner")
-		npcListCorner.CornerRadius = UDim.new(0, 6)
-		npcListCorner.Parent = npcListFrame
-
-		local npcLayout = Instance.new("UIListLayout")
-		npcLayout.Padding = UDim.new(0, 4)
-		npcLayout.Parent = npcListFrame
-
+		local npcListLayout = Instance.new("UIListLayout")
+		npcListLayout.Padding = UDim.new(0,4)
+		npcListLayout.Parent = npcListFrame
 		local function populateNPCList()
-			for _, c in ipairs(npcListFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
-			for _, name in ipairs(Teleport.getNPCList()) do
+			for _,c in ipairs(npcListFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+			for _,name in ipairs(Teleport.getNPCList()) do
 				local btn = Instance.new("TextButton")
-				btn.Size = Cache.UDim2_new(1, -10, 0, 28)
-				btn.BackgroundColor3 = Cache.Color3_fromRGB(30, 20, 55)
-				btn.BackgroundTransparency = 0.6
-				btn.Text = "  " .. name
+				btn.Size = Cache.UDim2_new(1,-10,0,30)
+				btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+				btn.Text = "   📌 "..name
 				btn.Font = Enum.Font.Gotham
 				btn.TextSize = 11
-				btn.TextColor3 = textLight
+				btn.TextColor3 = Cache.Color3_white
 				btn.TextXAlignment = Enum.TextXAlignment.Left
 				btn.BorderSizePixel = 0
 				btn.Parent = npcListFrame
-
-				local corner = Instance.new("UICorner")
-				corner.CornerRadius = UDim.new(0, 4)
-				corner.Parent = btn
-
+				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
 				btn.MouseButton1Click:Connect(function()
 					Teleport.safeTeleportToNPC(name)
-					btn.BackgroundColor3 = Cache.Color3_fromRGB(80, 200, 120)
+					btn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
 					task.wait(0.3)
-					btn.BackgroundColor3 = Cache.Color3_fromRGB(30, 20, 55)
+					btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
 				end)
 			end
-			npcListFrame.CanvasSize = Cache.UDim2_new(0, 0, 0, #Teleport.getNPCList() * 32 + 10)
+			npcListFrame.CanvasSize = Cache.UDim2_new(0,0,0, #Teleport.getNPCList() * 34 + 10)
 		end
 		refreshBtn.MouseButton1Click:Connect(populateNPCList)
 		task.spawn(populateNPCList)
 
-		-- ========== PÁGINA CONFIG ==========
-		createSectionHeader(configPage, "Profile Manager")
-		local configInfo = Instance.new("Frame")
-		configInfo.Size = Cache.UDim2_new(1, 0, 0, 45)
-		configInfo.BackgroundColor3 = bgAccent
-		configInfo.BackgroundTransparency = 0.85
-		configInfo.BorderSizePixel = 0
-		configInfo.Parent = configPage
+		-- ============================================================
+		-- MISC PAGE
+		-- ============================================================
+		createSectionHeader(miscPage, "Misc")
+		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
 
-		local configCorner = Instance.new("UICorner")
-		configCorner.CornerRadius = UDim.new(0, 6)
-		configCorner.Parent = configInfo
+		-- ============================================================
+		-- CONFIG PAGE - REWRITTEN: ALL SETTINGS VISIBLE
+		-- ============================================================
+		createSectionHeader(configPage, "📋 ALL SETTINGS")
 
-		local configLabel = Instance.new("TextLabel")
-		configLabel.Size = Cache.UDim2_new(1, -20, 1, 0)
-		configLabel.Position = Cache.UDim2_new(0, 10, 0, 0)
-		configLabel.BackgroundTransparency = 1
-		configLabel.Text = "Save / Load all hub settings\nProfiles stored in CyberHubConfigs folder"
-		configLabel.Font = Enum.Font.Gotham
-		configLabel.TextSize = 10
-		configLabel.TextColor3 = Cache.Color3_white
-		configLabel.TextWrapped = true
-		configLabel.TextXAlignment = Enum.TextXAlignment.Left
-		configLabel.Parent = configInfo
+		-- Informação
+		local cfgInfo = Instance.new("Frame")
+		cfgInfo.Size = Cache.UDim2_new(1,0,0,40)
+		cfgInfo.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+		cfgInfo.BackgroundTransparency = 0.85
+		cfgInfo.BorderSizePixel = 0
+		cfgInfo.Parent = configPage
+		local cfgInfoCorner = Instance.new("UICorner"); cfgInfoCorner.CornerRadius = UDim.new(0,6); cfgInfoCorner.Parent = cfgInfo
+		local cfgInfoLabel = Instance.new("TextLabel")
+		cfgInfoLabel.Size = Cache.UDim2_new(1,-20,1,0)
+		cfgInfoLabel.Position = Cache.UDim2_new(0,10,0,0)
+		cfgInfoLabel.BackgroundTransparency = 1
+		cfgInfoLabel.Text = "Todas as funções do hub em um só lugar. Ajuste e salve seu perfil."
+		cfgInfoLabel.Font = Enum.Font.Gotham
+		cfgInfoLabel.TextSize = 10
+		cfgInfoLabel.TextColor3 = Cache.Color3_white
+		cfgInfoLabel.TextWrapped = true
+		cfgInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+		cfgInfoLabel.Parent = cfgInfo
 
+		-- ---- Combat Settings ----
+		createSectionHeader(configPage, "⚔️ Combat")
+
+		-- Auto Farm
+		local _, cfgAutoFarmToggle, cfgAutoFarmBg, cfgAutoFarmCircle = createToggle(configPage, "Auto Farm", "Farm nearest NPC", State.autofarmEnabled)
+
+		-- Farm Mode (Behind / Above)
+		local cfgModeContainer = Instance.new("Frame")
+		cfgModeContainer.Size = Cache.UDim2_new(1,0,0,55)
+		cfgModeContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		cfgModeContainer.BorderSizePixel = 0
+		cfgModeContainer.Parent = configPage
+		local cfgModeCorner = Instance.new("UICorner"); cfgModeCorner.CornerRadius = UDim.new(0,6); cfgModeCorner.Parent = cfgModeContainer
+		local cfgModeLabel = Instance.new("TextLabel")
+		cfgModeLabel.Size = Cache.UDim2_new(1,-20,0,20)
+		cfgModeLabel.Position = Cache.UDim2_new(0,10,0,5)
+		cfgModeLabel.BackgroundTransparency = 1
+		cfgModeLabel.Text = "Farm Position"
+		cfgModeLabel.Font = Enum.Font.GothamBold
+		cfgModeLabel.TextSize = 11
+		cfgModeLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		cfgModeLabel.TextXAlignment = Enum.TextXAlignment.Left
+		cfgModeLabel.Parent = cfgModeContainer
+		local cfgModeBtnFrame = Instance.new("Frame")
+		cfgModeBtnFrame.Size = Cache.UDim2_new(1,-20,0,28)
+		cfgModeBtnFrame.Position = Cache.UDim2_new(0,10,0,25)
+		cfgModeBtnFrame.BackgroundTransparency = 1
+		cfgModeBtnFrame.Parent = cfgModeContainer
+		local cfgModeLayout = Instance.new("UIListLayout")
+		cfgModeLayout.FillDirection = Enum.FillDirection.Horizontal
+		cfgModeLayout.Padding = UDim.new(0,8)
+		cfgModeLayout.Parent = cfgModeBtnFrame
+		local configModeBehindBtn = Instance.new("TextButton")
+		configModeBehindBtn.Size = Cache.UDim2_new(0,130,0,26)
+		configModeBehindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40,40,55)
+		configModeBehindBtn.Text = "Behind"
+		configModeBehindBtn.Font = Enum.Font.GothamBold
+		configModeBehindBtn.TextSize = 11
+		configModeBehindBtn.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		configModeBehindBtn.BorderSizePixel = 0
+		configModeBehindBtn.AutoButtonColor = false
+		configModeBehindBtn.Parent = cfgModeBtnFrame
+		local configModeBehindCorner = Instance.new("UICorner"); configModeBehindCorner.CornerRadius = UDim.new(0,6); configModeBehindCorner.Parent = configModeBehindBtn
+		local configModeAboveBtn = configModeBehindBtn:Clone()
+		configModeAboveBtn.Text = "Above"
+		configModeAboveBtn.Parent = cfgModeBtnFrame
+		local function updateConfigModeVisuals()
+			local isBehind = (State.autofarmMode == "Behind")
+			configModeBehindBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
+			configModeBehindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
+			configModeAboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
+			configModeAboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			-- Sync combat page mode buttons
+			if behindBtn and aboveBtn then
+				behindBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
+				behindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
+				aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
+				aboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			end
+		end
+		configModeBehindBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Behind"; updateConfigModeVisuals() end)
+		configModeAboveBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Above"; updateConfigModeVisuals() end)
+		updateConfigModeVisuals()
+
+		-- Farm Distance slider (config page)
+		local _, cfgDistSlider, cfgDistFill, cfgDistLabel, cfgDistMin, cfgDistMax = createSlider(configPage, "Farm Distance", 1, 25, State.autofarmDistance)
+
+		-- Lock On
+		local _, cfgLockOnToggle, cfgLockOnBg, cfgLockOnCircle = createToggle(configPage, "Lock On", "Camera follows target", State.lockOnEnabled)
+
+		-- Kill Aura + Burst
+		local _, cfgKillAuraToggle, cfgKillAuraBg, cfgKillAuraCircle = createToggle(configPage, "Kill Aura (Keypad1)", "Auto attack nearest", State.autoAttackEnabled)
+		local _, cfgBurstSlider, cfgBurstFill, cfgBurstLabel, cfgBurstMin, cfgBurstMax = createSlider(configPage, "Burst Count", 1, 10, State.burstCount)
+
+		-- ---- Movement Settings ----
+		createSectionHeader(configPage, "🚀 Movement")
+
+		local _, cfgSpeedToggle, cfgSpeedBg, cfgSpeedCircle = createToggle(configPage, "Speed Boost (N)", "", State.speedEnabled)
+		local _, cfgSpeedSlider, cfgSpeedFill, cfgSpeedValLabel, cfgSpeedMin, cfgSpeedMax = createSlider(configPage, "Speed Value", 50, 300, State.speedValue)
+		local _, cfgJumpToggle, cfgJumpBg, cfgJumpCircle = createToggle(configPage, "Infinite Jump (Y)", "", State.infiniteJumpEnabled)
+		local _, cfgNoClipToggle, cfgNoClipBg, cfgNoClipCircle = createToggle(configPage, "No Clip", "Walk through walls", State.noClipEnabled)
+
+		-- ---- Visual Settings ----
+		createSectionHeader(configPage, "👁️ Visuals")
+
+		local _, cfgEspToggle, cfgEspBg, cfgEspCircle = createToggle(configPage, "ESP Highlights", "", State.espEnabled)
+		local _, cfgTracersToggle, cfgTracersBg, cfgTracersCircle = createToggle(configPage, "Tracers", "", State.tracersEnabled)
+		local _, cfgHealthBarsToggle, cfgHealthBarsBg, cfgHealthBarsCircle = createToggle(configPage, "Health Bars", "", State.healthBarsEnabled)
+		local _, cfgPlayerEspToggle, cfgPlayerEspBg, cfgPlayerEspCircle = createToggle(configPage, "Player ESP", "", State.playerESPEnabled)
+		local _, cfgFovToggle, cfgFovBg, cfgFovCircle = createToggle(configPage, "FOV Circle", "", State.fovEnabled)
+
+		-- ---- Profile Management ----
+		createSectionHeader(configPage, "💾 Profile Manager")
+
+		local profInfo = Instance.new("Frame")
+		profInfo.Size = Cache.UDim2_new(1,0,0,40)
+		profInfo.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		profInfo.BorderSizePixel = 0
+		profInfo.Parent = configPage
+		local profInfoCorner = Instance.new("UICorner"); profInfoCorner.CornerRadius = UDim.new(0,6); profInfoCorner.Parent = profInfo
+		local profInfoLabel = Instance.new("TextLabel")
+		profInfoLabel.Size = Cache.UDim2_new(1,-20,1,0)
+		profInfoLabel.Position = Cache.UDim2_new(0,10,0,0)
+		profInfoLabel.BackgroundTransparency = 1
+		profInfoLabel.Text = "Salve todas as configurações acima em um perfil. Use Autoload para carregar automaticamente."
+		profInfoLabel.Font = Enum.Font.Gotham
+		profInfoLabel.TextSize = 10
+		profInfoLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		profInfoLabel.TextWrapped = true
+		profInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+		profInfoLabel.Parent = profInfo
+
+		-- Nome do perfil
 		local nameContainer = Instance.new("Frame")
-		nameContainer.Size = Cache.UDim2_new(1, 0, 0, 40)
-		nameContainer.BackgroundColor3 = bgPanel
-		nameContainer.BackgroundTransparency = 0.8
+		nameContainer.Size = Cache.UDim2_new(1,0,0,40)
+		nameContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		nameContainer.BorderSizePixel = 0
 		nameContainer.Parent = configPage
-
-		local nameCorner = Instance.new("UICorner")
-		nameCorner.CornerRadius = UDim.new(0, 6)
-		nameCorner.Parent = nameContainer
-
+		local nameCorner = Instance.new("UICorner"); nameCorner.CornerRadius = UDim.new(0,6); nameCorner.Parent = nameContainer
 		local nameLabel = Instance.new("TextLabel")
-		nameLabel.Size = Cache.UDim2_new(0, 70, 1, 0)
-		nameLabel.Position = Cache.UDim2_new(0, 10, 0, 0)
+		nameLabel.Size = Cache.UDim2_new(0,80,1,0)
+		nameLabel.Position = Cache.UDim2_new(0,10,0,0)
 		nameLabel.BackgroundTransparency = 1
 		nameLabel.Text = "Profile:"
 		nameLabel.Font = Enum.Font.GothamBold
 		nameLabel.TextSize = 11
-		nameLabel.TextColor3 = textLight
+		nameLabel.TextColor3 = Cache.Color3_white
 		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 		nameLabel.Parent = nameContainer
-
 		local nameBox = Instance.new("TextBox")
-		nameBox.Size = Cache.UDim2_new(0, 160, 0, 28)
-		nameBox.Position = Cache.UDim2_new(0, 75, 0.5, -14)
-		nameBox.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 65)
-		nameBox.BackgroundTransparency = 0.6
+		nameBox.Size = Cache.UDim2_new(0,180,0,28)
+		nameBox.Position = Cache.UDim2_new(0,80,0.5,-14)
+		nameBox.BackgroundColor3 = Cache.Color3_fromRGB(30,30,42)
 		nameBox.Text = "default"
 		nameBox.Font = Enum.Font.Gotham
 		nameBox.TextSize = 11
-		nameBox.TextColor3 = textLight
+		nameBox.TextColor3 = Cache.Color3_white
 		nameBox.BorderSizePixel = 0
 		nameBox.Parent = nameContainer
+		local nameBoxCorner = Instance.new("UICorner"); nameBoxCorner.CornerRadius = UDim.new(0,4); nameBoxCorner.Parent = nameBox
 
-		local nameBoxCorner = Instance.new("UICorner")
-		nameBoxCorner.CornerRadius = UDim.new(0, 4)
-		nameBoxCorner.Parent = nameBox
-
+		-- Botões de perfil
 		local btnContainer = Instance.new("Frame")
-		btnContainer.Size = Cache.UDim2_new(1, 0, 0, 40)
+		btnContainer.Size = Cache.UDim2_new(1,0,0,40)
 		btnContainer.BackgroundTransparency = 1
 		btnContainer.Parent = configPage
-
 		local btnLayout = Instance.new("UIListLayout")
 		btnLayout.FillDirection = Enum.FillDirection.Horizontal
 		btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		btnLayout.Padding = UDim.new(0, 6)
+		btnLayout.Padding = UDim.new(0,4)
 		btnLayout.Parent = btnContainer
+		local saveBtn = createSmallButton(btnContainer, "Save", Cache.Color3_fromRGB(80,200,120), 60)
+		local loadBtn = createSmallButton(btnContainer, "Load", Cache.Color3_fromRGB(100,180,255), 60)
+		local overwriteBtn = createSmallButton(btnContainer, "Overwrite", Cache.Color3_fromRGB(255,180,80), 75)
+		local deleteBtn = createSmallButton(btnContainer, "Delete", Cache.Color3_fromRGB(220,80,80), 60)
+		local autoloadBtn = createSmallButton(btnContainer, "Autoload", Cache.Color3_fromRGB(200,150,255), 70)
+		saveBtn.Size = Cache.UDim2_new(0,60,0,30)
+		loadBtn.Size = Cache.UDim2_new(0,60,0,30)
+		overwriteBtn.Size = Cache.UDim2_new(0,75,0,30)
+		deleteBtn.Size = Cache.UDim2_new(0,60,0,30)
+		autoloadBtn.Size = Cache.UDim2_new(0,70,0,30)
 
-		local saveBtn = createButton(btnContainer, "Save", Cache.Color3_fromRGB(80, 200, 120))
-		local loadBtn = createButton(btnContainer, "Load", Cache.Color3_fromRGB(110, 70, 210))
-		local overwriteBtn = createButton(btnContainer, "Overwrite", Cache.Color3_fromRGB(255, 180, 80))
-		local deleteBtn = createButton(btnContainer, "Delete", Cache.Color3_fromRGB(220, 80, 80))
-		local autoloadBtn = createButton(btnContainer, "Autoload", Cache.Color3_fromRGB(255, 180, 80))
-		saveBtn.Size = Cache.UDim2_new(0, 65, 0, 28)
-		loadBtn.Size = Cache.UDim2_new(0, 65, 0, 28)
-		overwriteBtn.Size = Cache.UDim2_new(0, 85, 0, 28)
-		deleteBtn.Size = Cache.UDim2_new(0, 65, 0, 28)
-		autoloadBtn.Size = Cache.UDim2_new(0, 75, 0, 28)
-
+		-- Lista de perfis
 		local profileList = Instance.new("ScrollingFrame")
-		profileList.Size = Cache.UDim2_new(1, 0, 0, 130)
-		profileList.BackgroundColor3 = bgPanel
-		profileList.BackgroundTransparency = 0.8
+		profileList.Size = Cache.UDim2_new(1,0,0,120)
+		profileList.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		profileList.BorderSizePixel = 0
-		profileList.CanvasSize = Cache.UDim2_new(0, 0, 0, 0)
+		profileList.CanvasSize = Cache.UDim2_new(0,0,0,0)
 		profileList.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		profileList.ScrollBarThickness = 3
 		profileList.Parent = configPage
-
-		local profileCorner = Instance.new("UICorner")
-		profileCorner.CornerRadius = UDim.new(0, 6)
-		profileCorner.Parent = profileList
-
-		local profileLayout = Instance.new("UIListLayout")
-		profileLayout.Padding = UDim.new(0, 4)
-		profileLayout.Parent = profileList
+		local profileListLayout = Instance.new("UIListLayout")
+		profileListLayout.Padding = UDim.new(0,4)
+		profileListLayout.Parent = profileList
 
 		local function refreshProfileList(selectedName)
-			for _, c in ipairs(profileList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+			for _,c in ipairs(profileList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
 			local names = ConfigManager.listConfigs()
-			for _, name in ipairs(names) do
+			for _,name in ipairs(names) do
 				local btn = Instance.new("TextButton")
-				btn.Size = Cache.UDim2_new(1, -10, 0, 26)
-				btn.BackgroundColor3 = (selectedName == name) and bgAccent or Cache.Color3_fromRGB(30, 20, 55)
-				btn.BackgroundTransparency = 0.6
-				btn.Text = "  " .. name
+				btn.Size = Cache.UDim2_new(1,-10,0,26)
+				btn.BackgroundColor3 = (selectedName == name) and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(25,25,35)
+				btn.Text = "   📄 "..name
 				btn.Font = Enum.Font.Gotham
-				btn.TextSize = 11
-				btn.TextColor3 = (selectedName == name) and Cache.Color3_white or textLight
+				btn.TextSize = 10
+				btn.TextColor3 = (selectedName == name) and Cache.Color3_white or Cache.Color3_fromRGB(200,200,210)
 				btn.TextXAlignment = Enum.TextXAlignment.Left
 				btn.BorderSizePixel = 0
 				btn.Parent = profileList
-
-				local corner = Instance.new("UICorner")
-				corner.CornerRadius = UDim.new(0, 4)
-				corner.Parent = btn
-
+				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
 				btn.MouseButton1Click:Connect(function()
 					nameBox.Text = name
 					refreshProfileList(name)
 				end)
 			end
-			profileList.CanvasSize = Cache.UDim2_new(0, 0, 0, #names * 30 + 10)
+			profileList.CanvasSize = Cache.UDim2_new(0,0,0, #names * 30 + 10)
 		end
 
+		-- Ações dos botões
 		saveBtn.MouseButton1Click:Connect(function()
-			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then n = "unnamed" end
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
 			ConfigManager.saveConfig(n)
 			refreshProfileList(n)
 		end)
-
 		loadBtn.MouseButton1Click:Connect(function()
-			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then return end
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
 			ConfigManager.loadConfig(n)
 			refreshProfileList(n)
-			updateModeVisuals()
-			for k, v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+			-- Atualiza todos os toggles visuais
+			updateConfigModeVisuals()
+			for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+			for k,v in pairs(configToggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+			-- Atualiza sliders
+			cfgDistLabel.Text = tostring(State.autofarmDistance)
+			cfgDistFill.Size = Cache.UDim2_new((State.autofarmDistance - cfgDistMin)/(cfgDistMax - cfgDistMin),0,1,0)
+			distLabel.Text = tostring(State.autofarmDistance)
+			distFill.Size = Cache.UDim2_new((State.autofarmDistance - distMin)/(distMax - distMin),0,1,0)
+			cfgBurstLabel.Text = tostring(State.burstCount)
+			cfgBurstFill.Size = Cache.UDim2_new((State.burstCount - cfgBurstMin)/(cfgBurstMax - cfgBurstMin),0,1,0)
 			burstLabel.Text = tostring(State.burstCount)
-			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin), 0, 1, 0)
-			for _, info in pairs(bindButtons) do if info.update then info.update() end end
+			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
+			cfgSpeedValLabel.Text = tostring(State.speedValue)
+			cfgSpeedFill.Size = Cache.UDim2_new((State.speedValue - cfgSpeedMin)/(cfgSpeedMax - cfgSpeedMin),0,1,0)
+			speedValLabel.Text = tostring(State.speedValue)
+			speedFill.Size = Cache.UDim2_new((State.speedValue - speedMin)/(speedMax - speedMin),0,1,0)
 		end)
-
 		overwriteBtn.MouseButton1Click:Connect(function()
-			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then n = "unnamed" end
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
 			ConfigManager.overwriteConfig(n)
 			refreshProfileList(n)
 		end)
-
 		deleteBtn.MouseButton1Click:Connect(function()
-			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then return end
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
 			ConfigManager.deleteConfig(n)
 			refreshProfileList()
 		end)
-
 		autoloadBtn.MouseButton1Click:Connect(function()
-			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then return end
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
 			ConfigManager.setAutoload(n)
 		end)
-
 		refreshProfileList()
 
-		-- ========== PÁGINA MISC ==========
-		createSectionHeader(miscPage, "Misc")
-		local _, jumpToggle, jumpBg, jumpCircle, jumpBind = createToggle(miscPage, "Infinite Jump", "", State.infiniteJumpEnabled, State.keybinds.toggleJump)
-		local _, noClipToggle, noClipBg, noClipCircle, noClipBind = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled, nil)
-
-		-- ========== TOGGLES FUNCTIONS ==========
+		-- ============================================================
+		-- TOGGLE FUNCTIONS (principais)
+		-- ============================================================
 		ToggleFunctions.autofarm = function(enabled)
 			State.autofarmEnabled = enabled
 			Utils.animateToggle(autofarmBg, autofarmCircle, enabled)
+			Utils.animateToggle(cfgAutoFarmBg, cfgAutoFarmCircle, enabled)
 			if enabled then
 				Utils.disconnectConnection("autofarm")
 				State.connections.autofarm = Services.RunService.Heartbeat:Connect(Combat.autofarmLoop)
@@ -1678,10 +1612,12 @@ local GUI = (function()
 			end
 		end
 		autofarmToggle.MouseButton1Click:Connect(function() ToggleFunctions.autofarm(not State.autofarmEnabled) end)
+		cfgAutoFarmToggle.MouseButton1Click:Connect(function() ToggleFunctions.autofarm(not State.autofarmEnabled) end)
 
 		ToggleFunctions.lockOn = function(enabled)
 			State.lockOnEnabled = enabled
 			Utils.animateToggle(lockOnBg, lockOnCircle, enabled)
+			Utils.animateToggle(cfgLockOnBg, cfgLockOnCircle, enabled)
 			if enabled then
 				Utils.disconnectConnection("lockOn")
 				State.connections.lockOn = Services.RunService.RenderStepped:Connect(Combat.lockOnLoop)
@@ -1691,10 +1627,12 @@ local GUI = (function()
 			end
 		end
 		lockOnToggle.MouseButton1Click:Connect(function() ToggleFunctions.lockOn(not State.lockOnEnabled) end)
+		cfgLockOnToggle.MouseButton1Click:Connect(function() ToggleFunctions.lockOn(not State.lockOnEnabled) end)
 
 		ToggleFunctions.autoAttack = function(enabled)
 			State.autoAttackEnabled = enabled
 			Utils.animateToggle(autoAttackBg, autoAttackCircle, enabled)
+			Utils.animateToggle(cfgKillAuraBg, cfgKillAuraCircle, enabled)
 			if enabled then
 				Combat.startAutoAttack()
 			else
@@ -1702,10 +1640,12 @@ local GUI = (function()
 			end
 		end
 		autoAttackToggle.MouseButton1Click:Connect(function() ToggleFunctions.autoAttack(not State.autoAttackEnabled) end)
+		cfgKillAuraToggle.MouseButton1Click:Connect(function() ToggleFunctions.autoAttack(not State.autoAttackEnabled) end)
 
 		ToggleFunctions.speed = function(enabled)
 			State.speedEnabled = enabled
 			Utils.animateToggle(speedBg, speedCircle, enabled)
+			Utils.animateToggle(cfgSpeedBg, cfgSpeedCircle, enabled)
 			if enabled then
 				Utils.disconnectConnection("speed")
 				State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
@@ -1714,70 +1654,83 @@ local GUI = (function()
 			end
 		end
 		speedToggle.MouseButton1Click:Connect(function() ToggleFunctions.speed(not State.speedEnabled) end)
+		cfgSpeedToggle.MouseButton1Click:Connect(function() ToggleFunctions.speed(not State.speedEnabled) end)
 
 		ToggleFunctions.infiniteJump = function(enabled)
 			State.infiniteJumpEnabled = enabled
 			Utils.animateToggle(jumpBg, jumpCircle, enabled)
+			Utils.animateToggle(cfgJumpBg, cfgJumpCircle, enabled)
 		end
 		jumpToggle.MouseButton1Click:Connect(function() ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled) end)
+		cfgJumpToggle.MouseButton1Click:Connect(function() ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled) end)
 
 		ToggleFunctions.noClip = function(enabled)
 			State.noClipEnabled = enabled
 			Utils.animateToggle(noClipBg, noClipCircle, enabled)
+			Utils.animateToggle(cfgNoClipBg, cfgNoClipCircle, enabled)
 			if enabled then
 				Movement.enableNoClip()
 				Utils.disconnectConnection("noClip")
-				State.connections.noClip = Services.RunService.Heartbeat:Connect(function()
-					if State.noClipEnabled then Movement.enableNoClip() end
-				end)
+				State.connections.noClip = Services.RunService.Heartbeat:Connect(function() if State.noClipEnabled then Movement.enableNoClip() end end)
 			else
 				Movement.disableNoClip()
 				Utils.disconnectConnection("noClip")
 			end
 		end
 		noClipToggle.MouseButton1Click:Connect(function() ToggleFunctions.noClip(not State.noClipEnabled) end)
+		cfgNoClipToggle.MouseButton1Click:Connect(function() ToggleFunctions.noClip(not State.noClipEnabled) end)
 
 		ToggleFunctions.esp = function(enabled)
 			State.espEnabled = enabled
 			Utils.animateToggle(espBg, espCircle, enabled)
+			Utils.animateToggle(cfgEspBg, cfgEspCircle, enabled)
 			if not enabled then ESP.clearAllESP() end
 		end
 		espToggle.MouseButton1Click:Connect(function() ToggleFunctions.esp(not State.espEnabled) end)
+		cfgEspToggle.MouseButton1Click:Connect(function() ToggleFunctions.esp(not State.espEnabled) end)
 
 		ToggleFunctions.tracers = function(enabled)
 			State.tracersEnabled = enabled
 			Utils.animateToggle(tracersBg, tracersCircle, enabled)
+			Utils.animateToggle(cfgTracersBg, cfgTracersCircle, enabled)
 			if not enabled then ESP.clearAllTracers() end
 		end
 		tracersToggle.MouseButton1Click:Connect(function() ToggleFunctions.tracers(not State.tracersEnabled) end)
+		cfgTracersToggle.MouseButton1Click:Connect(function() ToggleFunctions.tracers(not State.tracersEnabled) end)
 
 		ToggleFunctions.healthBars = function(enabled)
 			State.healthBarsEnabled = enabled
 			Utils.animateToggle(healthBarsBg, healthBarsCircle, enabled)
+			Utils.animateToggle(cfgHealthBarsBg, cfgHealthBarsCircle, enabled)
 			if not enabled then ESP.clearAllHealthBars() end
 		end
 		healthBarsToggle.MouseButton1Click:Connect(function() ToggleFunctions.healthBars(not State.healthBarsEnabled) end)
+		cfgHealthBarsToggle.MouseButton1Click:Connect(function() ToggleFunctions.healthBars(not State.healthBarsEnabled) end)
 
 		ToggleFunctions.playerESP = function(enabled)
 			State.playerESPEnabled = enabled
 			Utils.animateToggle(playerESPBg, playerESPCircle, enabled)
+			Utils.animateToggle(cfgPlayerEspBg, cfgPlayerEspCircle, enabled)
 		end
 		playerESPToggle.MouseButton1Click:Connect(function() ToggleFunctions.playerESP(not State.playerESPEnabled) end)
+		cfgPlayerEspToggle.MouseButton1Click:Connect(function() ToggleFunctions.playerESP(not State.playerESPEnabled) end)
 
 		ToggleFunctions.fov = function(enabled)
 			State.fovEnabled = enabled
 			Utils.animateToggle(fovBg, fovCircle, enabled)
+			Utils.animateToggle(cfgFovBg, cfgFovCircle, enabled)
 			if enabled then ESP.createFOVCircle() else ESP.removeFOVCircle() end
 		end
 		fovToggle.MouseButton1Click:Connect(function() ToggleFunctions.fov(not State.fovEnabled) end)
+		cfgFovToggle.MouseButton1Click:Connect(function() ToggleFunctions.fov(not State.fovEnabled) end)
 
-		-- ========== SLIDERS ==========
+		-- ============================================================
+		-- HANDLE SLIDERS
+		-- ============================================================
 		local function handleSlider(btn, fill, label, minV, maxV, precision, callback)
 			local dragging = false
 			btn.MouseButton1Down:Connect(function() dragging = true end)
-			Services.UserInputService.InputEnded:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
-			end)
+			Services.UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
 			Services.UserInputService.InputChanged:Connect(function(input)
 				if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
 					local sliderBg = btn.Parent
@@ -1786,89 +1739,88 @@ local GUI = (function()
 					local value = minV + pct * (maxV - minV)
 					value = math.floor(value * precision) / precision
 					label.Text = tostring(value)
-					fill.Size = Cache.UDim2_new(pct, 0, 1, 0)
+					fill.Size = Cache.UDim2_new(pct,0,1,0)
 					if callback then callback(value) end
 				end
 			end)
 		end
 
+		-- Combat page sliders
 		handleSlider(distSlider, distFill, distLabel, distMin, distMax, 10, function(v) State.autofarmDistance = v end)
-		handleSlider(speedSlider, speedFill, speedValLabel, speedMin, speedMax, 1, function(v) State.speedValue = v end)
 		handleSlider(burstSlider, burstFill, burstLabel, burstMin, burstMax, 1, function(v) State.burstCount = v end)
+		handleSlider(speedSlider, speedFill, speedValLabel, speedMin, speedMax, 1, function(v) State.speedValue = v end)
 
-		-- ========== BINDS ==========
-		local function setupBind(bindBtn, keyName, callback)
-			if not bindBtn then return end
-			local function updateText()
-				local key = State.keybinds[keyName]
-				if key then
-					bindBtn.Text = getKeyName(key)
-				else
-					bindBtn.Text = "?"
-				end
-			end
-			updateText()
-			table.insert(bindButtons, { update = updateText })
-			bindBtn.MouseButton1Click:Connect(function()
-				startBindCapture(bindBtn, keyName, function(newKey)
-					State.keybinds[keyName] = newKey
-					updateText()
-					if callback then callback(newKey) end
-				end)
-			end)
-		end
+		-- Config page sliders
+		handleSlider(cfgDistSlider, cfgDistFill, cfgDistLabel, cfgDistMin, cfgDistMax, 10, function(v)
+			State.autofarmDistance = v
+			distLabel.Text = tostring(v)
+			distFill.Size = Cache.UDim2_new((v - distMin)/(distMax - distMin),0,1,0)
+		end)
+		handleSlider(cfgBurstSlider, cfgBurstFill, cfgBurstLabel, cfgBurstMin, cfgBurstMax, 1, function(v)
+			State.burstCount = v
+			burstLabel.Text = tostring(v)
+			burstFill.Size = Cache.UDim2_new((v - burstMin)/(burstMax - burstMin),0,1,0)
+		end)
+		handleSlider(cfgSpeedSlider, cfgSpeedFill, cfgSpeedValLabel, cfgSpeedMin, cfgSpeedMax, 1, function(v)
+			State.speedValue = v
+			speedValLabel.Text = tostring(v)
+			speedFill.Size = Cache.UDim2_new((v - speedMin)/(speedMax - speedMin),0,1,0)
+		end)
 
-		setupBind(autofarmBind, "toggleAutofarm")
-		setupBind(autoAttackBind, "toggleAutoAttack")
-		setupBind(speedBind, "toggleSpeed")
-		setupBind(jumpBind, "toggleJump")
-		setupBind(espBind, "toggleESP")
-		setupBind(healthBarsBind, "toggleHealthBars")
-
-		-- ========== REFS ==========
+		-- ============================================================
+		-- REGISTRA REFERÊNCIAS PARA SYNC
+		-- ============================================================
 		toggleRefs = {
-			autofarmEnabled = { bg = autofarmBg, circle = autofarmCircle },
-			lockOnEnabled = { bg = lockOnBg, circle = lockOnCircle },
-			autoAttackEnabled = { bg = autoAttackBg, circle = autoAttackCircle },
-			speedEnabled = { bg = speedBg, circle = speedCircle },
-			infiniteJumpEnabled = { bg = jumpBg, circle = jumpCircle },
-			noClipEnabled = { bg = noClipBg, circle = noClipCircle },
-			espEnabled = { bg = espBg, circle = espCircle },
-			tracersEnabled = { bg = tracersBg, circle = tracersCircle },
-			healthBarsEnabled = { bg = healthBarsBg, circle = healthBarsCircle },
-			playerESPEnabled = { bg = playerESPBg, circle = playerESPCircle },
-			fovEnabled = { bg = fovBg, circle = fovCircle },
+			autofarmEnabled={bg=autofarmBg, circle=autofarmCircle},
+			lockOnEnabled={bg=lockOnBg, circle=lockOnCircle},
+			autoAttackEnabled={bg=autoAttackBg, circle=autoAttackCircle},
+			speedEnabled={bg=speedBg, circle=speedCircle},
+			infiniteJumpEnabled={bg=jumpBg, circle=jumpCircle},
+			noClipEnabled={bg=noClipBg, circle=noClipCircle},
+			espEnabled={bg=espBg, circle=espCircle},
+			tracersEnabled={bg=tracersBg, circle=tracersCircle},
+			healthBarsEnabled={bg=healthBarsBg, circle=healthBarsCircle},
+			playerESPEnabled={bg=playerESPBg, circle=playerESPCircle},
+			fovEnabled={bg=fovBg, circle=fovCircle},
+		}
+		configToggleRefs = {
+			autofarmEnabled={bg=cfgAutoFarmBg, circle=cfgAutoFarmCircle},
+			lockOnEnabled={bg=cfgLockOnBg, circle=cfgLockOnCircle},
+			autoAttackEnabled={bg=cfgKillAuraBg, circle=cfgKillAuraCircle},
+			speedEnabled={bg=cfgSpeedBg, circle=cfgSpeedCircle},
+			infiniteJumpEnabled={bg=cfgJumpBg, circle=cfgJumpCircle},
+			noClipEnabled={bg=cfgNoClipBg, circle=cfgNoClipCircle},
+			espEnabled={bg=cfgEspBg, circle=cfgEspCircle},
+			tracersEnabled={bg=cfgTracersBg, circle=cfgTracersCircle},
+			healthBarsEnabled={bg=cfgHealthBarsBg, circle=cfgHealthBarsCircle},
+			playerESPEnabled={bg=cfgPlayerEspBg, circle=cfgPlayerEspCircle},
+			fovEnabled={bg=cfgFovBg, circle=cfgFovCircle},
 		}
 
-		-- ========== CLEANUP ==========
 		screenGui.Destroying:Connect(function()
 			Utils.cleanAllConnections()
-			ESP.clearAllESP()
-			ESP.clearAllTracers()
-			ESP.clearAllHealthBars()
-			ESP.removeFOVCircle()
-			for _, esp in pairs(State.playerESPObjects) do if esp then esp:Destroy() end end
+			ESP.clearAllESP(); ESP.clearAllTracers(); ESP.clearAllHealthBars(); ESP.removeFOVCircle()
+			for _,esp in pairs(State.playerESPObjects) do if esp then esp:Destroy() end end
 			Combat.stopAutoAttack()
 		end)
 
 		return {
-			screenGui = screenGui,
-			mainFrame = mainFrame,
-			ToggleFunctions = ToggleFunctions,
-			refreshToggles = function()
-				for k, v in pairs(toggleRefs) do
-					Utils.animateToggle(v.bg, v.circle, State[k])
-				end
+			screenGui=screenGui,
+			mainFrame=mainFrame,
+			ToggleFunctions=ToggleFunctions,
+			refreshToggles=function()
+				for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+				for k,v in pairs(configToggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+				cfgBurstLabel.Text = tostring(State.burstCount)
+				cfgBurstFill.Size = Cache.UDim2_new((State.burstCount - cfgBurstMin)/(cfgBurstMax - cfgBurstMin),0,1,0)
 				burstLabel.Text = tostring(State.burstCount)
-				burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin) / (burstMax - burstMin), 0, 1, 0)
-				for _, info in pairs(bindButtons) do
-					if info.update then info.update() end
-				end
-			end,
+				burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
+				updateConfigModeVisuals()
+			end
 		}
 	end
 
-	return { build = build }
+	return { build=build, getToggleFunctions=function() return ToggleFunctions end }
 end)()
 
 --//====================================================--
@@ -1878,64 +1830,51 @@ local Input = (function()
 	local State = Core.State
 	local Services = Core.Services
 	local player = Services.Players.LocalPlayer
-	local pendingBind = nil
 
-	local function setPendingBind(info)
-		pendingBind = info
-	end
-
-	Services.UserInputService.InputBegan:Connect(function(input, processed)
-		if processed then return end
-		if pendingBind then
-			if input.KeyCode ~= Enum.KeyCode.Unknown then
-				local key = input.KeyCode
-				pendingBind.cb(key)
-				pendingBind.btn.Text = getKeyName(key)
-				pendingBind = nil
+	local function init(mainFrame, ToggleFunctions)
+		Services.UserInputService.JumpRequest:Connect(function()
+			if State.infiniteJumpEnabled then
+				local _, hum = Utils.getCharComponents()
+				if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
 			end
-			return
-		end
+		end)
 
-		local kb = State.keybinds
-		if input.KeyCode == kb.toggleGUI then
-			State.guiVisible = not State.guiVisible
-			if mainFrame then mainFrame.Visible = State.guiVisible end
-		elseif input.KeyCode == kb.toggleAutoAttack then
-			ToggleFunctions.autoAttack(not State.autoAttackEnabled)
-		elseif input.KeyCode == kb.toggleAutofarm then
-			ToggleFunctions.autofarm(not State.autofarmEnabled)
-		elseif input.KeyCode == kb.toggleSpeed then
-			ToggleFunctions.speed(not State.speedEnabled)
-		elseif input.KeyCode == kb.toggleJump then
-			ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
-		elseif input.KeyCode == kb.toggleESP then
-			ToggleFunctions.esp(not State.espEnabled)
-		elseif input.KeyCode == kb.toggleHealthBars then
-			ToggleFunctions.healthBars(not State.healthBarsEnabled)
-		end
-	end)
+		Services.UserInputService.InputBegan:Connect(function(input, processed)
+			if processed then return end
+			if input.KeyCode == Enum.KeyCode.F1 then
+				State.guiVisible = not State.guiVisible
+				mainFrame.Visible = State.guiVisible
+			-- NOVAS BINDS:
+			elseif input.KeyCode == Enum.KeyCode.Keypad1 then      -- Keypad1 → Kill Aura
+				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
+			elseif input.KeyCode == Enum.KeyCode.Keypad2 then      -- Keypad2 → Auto Farm
+				ToggleFunctions.autofarm(not State.autofarmEnabled)
+			elseif input.KeyCode == Enum.KeyCode.N then            -- N → Speed
+				ToggleFunctions.speed(not State.speedEnabled)
+			elseif input.KeyCode == Enum.KeyCode.Y then            -- Y → Infinite Jump
+				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
+			-- Mantidas:
+			elseif input.KeyCode == Enum.KeyCode.KeypadZero then   -- KeypadZero → ESP
+				ToggleFunctions.esp(not State.espEnabled)
+			elseif input.KeyCode == Enum.KeyCode.KeypadThree then  -- KeypadThree → Health Bars
+				ToggleFunctions.healthBars(not State.healthBarsEnabled)
+			end
+		end)
 
-	Services.UserInputService.JumpRequest:Connect(function()
-		if State.infiniteJumpEnabled then
-			local _, hum = Utils.getCharComponents()
-			if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-		end
-	end)
-
-	player.CharacterAdded:Connect(function()
-		Utils.invalidateCharCache()
-		task.wait(0.3)
-		if State.speedEnabled then
-			Utils.disconnectConnection("speed")
-			State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
-		end
-		if State.autoAttackEnabled then
-			Combat.stopAutoAttack()
-			Combat.startAutoAttack()
-		end
-	end)
-
-	return { setPendingBind = setPendingBind }
+		player.CharacterAdded:Connect(function()
+			Utils.invalidateCharCache()
+			task.wait(0.3)
+			if State.speedEnabled then
+				Utils.disconnectConnection("speed")
+				State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
+			end
+			if State.autoAttackEnabled then
+				Combat.stopAutoAttack()
+				Combat.startAutoAttack()
+			end
+		end)
+	end
+	return { init=init }
 end)()
 
 --//====================================================--
@@ -1948,6 +1887,8 @@ local guiResult = GUI.build()
 local ToggleFunctions = guiResult.ToggleFunctions
 local mainFrame = guiResult.mainFrame
 GUI.refreshToggles = guiResult.refreshToggles
+
+Input.init(mainFrame, ToggleFunctions)
 
 Utils.updateCameraCache()
 Core.Services.RunService.RenderStepped:Connect(function()
@@ -1973,16 +1914,25 @@ ConfigManager.loadAutoload()
 task.wait(0.5)
 if GUI.refreshToggles then GUI.refreshToggles() end
 
-print("============================================")
+print("═══════════════════════════════════════════════")
 print("        CYBER HUB - FFRE EDITION V4.7         ")
-print("============================================")
-print("  Combat: Auto Farm | Lock On | Kill Aura")
-print("  Movement: Speed | Infinite Jump | No Clip")
-print("  Visual: ESP | Tracers | Health Bars")
-print("  Teleport: Ultra Smooth (Anti-Kick)")
-print("  Config: Save/Load/Overwrite profiles")
-print("  Binds: configuráveis via UI")
-print("============================================")
+print("═══════════════════════════════════════════════")
+print("  ⚔️  Combat: Auto Farm | Lock On | Kill Aura")
+print("  🚀  Movement: Speed | Infinite Jump | No Clip")
+print("  👁️  Visual: ESP | Tracers | Health Bars")
+print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
+print("  ⚙️  Config: Save/Load/Overwrite profiles")
+print("  🖱️  Window: Draggable & Resizable")
+print("  🔥  Burst Count: ajustável (1-10)")
+print("═══════════════════════════════════════════════")
+print("  F1     - Toggle GUI")
+print("  Keypad1 - Toggle Kill Aura")
+print("  Keypad2 - Toggle Autofarm")
+print("  N      - Toggle Speed")
+print("  Y      - Toggle Infinite Jump")
+print("  KP0    - Toggle ESP")
+print("  KP3    - Toggle Health Bars")
+print("═══════════════════════════════════════════════")
 
 return {
 	Core = Core,
