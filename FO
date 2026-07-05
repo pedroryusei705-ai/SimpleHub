@@ -38,8 +38,8 @@ local Core = (function()
 		VISUAL_NPC_FOLDER     = workspace:WaitForChild("Alive"),
 		TELEPORT_NPC_FOLDER   = workspace:WaitForChild("LiveNPCS"),
 		CONFIG_FOLDER         = "CyberHubConfigs",
-		WINDOW_MIN_SIZE       = Vector2.new(320, 420),
-		WINDOW_DEFAULT_SIZE   = Vector2.new(360, 500),
+		WINDOW_MIN_SIZE       = Vector2.new(450, 550),
+		WINDOW_DEFAULT_SIZE   = Vector2.new(520, 700),
 	}
 
 	local State = {
@@ -72,7 +72,6 @@ local Core = (function()
 		guiVisible         = true,
 		currentPage        = "combat",
 		isTeleporting      = false,
-		-- NOVO: burst count padrão
 		burstCount         = 3,
 	}
 
@@ -473,7 +472,7 @@ local Combat = (function()
 
 	local autoAttackThread = nil
 	local autoAttackRunning = false
-	local attackCooldown = 0.12 -- padrão
+	local attackCooldown = 0.12
 
 	local function startAutoAttack()
 		if autoAttackThread then return end
@@ -494,9 +493,7 @@ local Combat = (function()
 					State.lockedTarget = target
 				end
 
-				-- Lê o burst count atual
 				local burst = State.burstCount or 3
-				-- Se burst for menor que 1, ajusta para 1
 				if burst < 1 then burst = 1 end
 
 				if target then
@@ -510,7 +507,6 @@ local Combat = (function()
 							attackPos = npcRoot.Position + Vector3.new(0, State.autofarmDistance, 0)
 						end
 						local cframe = CFrame.new(attackPos, npcRoot.Position)
-						-- Repete o combo de 4 ataques 'burst' vezes
 						for _ = 1, burst do
 							remote:FireServer(1, weapon, cframe, true, weapon)
 							remote:FireServer(2, weapon, cframe, true, weapon)
@@ -539,7 +535,6 @@ local Combat = (function()
 		end
 	end
 
-	-- Lock On (suavizado)
 	local function lockOnLoop()
 		if not State.lockOnEnabled then return end
 		local camera = Cache.currentCamera
@@ -561,7 +556,6 @@ local Combat = (function()
 		end
 	end
 
-	-- Auto Farm (posicionamento)
 	local function autofarmLoop()
 		if not State.autofarmEnabled then return end
 		local root = Utils.getCharComponents()
@@ -584,7 +578,6 @@ local Combat = (function()
 		end
 	end
 
-	-- Speed Boost
 	local function speedLoop()
 		if not State.speedEnabled then return end
 		local root, hum = Utils.getCharComponents()
@@ -756,7 +749,7 @@ local ConfigManager = (function()
 			healthBarsEnabled=State.healthBarsEnabled,
 			playerESPEnabled=State.playerESPEnabled,
 			fovEnabled=State.fovEnabled,
-			burstCount=State.burstCount, -- NOVO
+			burstCount=State.burstCount,
 		}
 		local path = folder.."/"..name..".json"
 		local success, err = pcall(writefile, path, Http:JSONEncode(data))
@@ -850,6 +843,9 @@ local GUI = (function()
 	local resizeActive = false
 	local resizeStartPos, resizeStartSize
 	local selectedProfileBtn = nil
+
+	-- Referências para os toggles da config page (para sincronização)
+	local configToggleRefs = {}
 
 	local function makeResizable(frame)
 		local gripSize = 8
@@ -1025,6 +1021,21 @@ local GUI = (function()
 		return btn
 	end
 
+	local function createSmallButton(parent, text, color, width)
+		local btn = Instance.new("TextButton")
+		btn.Size = Cache.UDim2_new(0, width or 65, 0, 28)
+		btn.BackgroundColor3 = color or Cache.Color3_fromRGB(100,180,255)
+		btn.Text = text
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 10
+		btn.TextColor3 = Cache.Color3_white
+		btn.BorderSizePixel = 0
+		btn.AutoButtonColor = false
+		btn.Parent = parent
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
+		return btn
+	end
+
 	local function createPage(name, parent)
 		local page = Instance.new("ScrollingFrame")
 		page.Name = name
@@ -1065,6 +1076,9 @@ local GUI = (function()
 
 	local ToggleFunctions = {}
 
+	-- ============================================================
+	-- BUILD PRINCIPAL
+	-- ============================================================
 	local function build()
 		pcall(function() Core.Services.CoreGui:FindFirstChild(CONFIG.GUI_NAME):Destroy() end)
 		screenGui = Instance.new("ScreenGui")
@@ -1165,7 +1179,9 @@ local GUI = (function()
 		miscBtn.MouseButton1Click:Connect(function() switchPage(miscPage, miscBtn) end)
 		switchPage(combatPage, combatBtn)
 
+		-- ============================================================
 		-- COMBAT PAGE
+		-- ============================================================
 		createSectionHeader(combatPage, "Auto Farm")
 		local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(combatPage, "Auto Farm", "Farm nearest NPC", State.autofarmEnabled)
 		
@@ -1214,23 +1230,31 @@ local GUI = (function()
 			behindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
 			aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
 			aboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			-- Sync config page mode buttons if they exist
+			if configModeBehindBtn and configModeAboveBtn then
+				configModeBehindBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
+				configModeBehindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
+				configModeAboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
+				configModeAboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			end
 		end
 		behindBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Behind"; updateModeVisuals() end)
 		aboveBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Above"; updateModeVisuals() end)
 		updateModeVisuals()
 
 		local _, distSlider, distFill, distLabel, distMin, distMax = createSlider(combatPage, "Farm Distance", 1, 25, State.autofarmDistance)
-		-- NOVO SLIDER: Burst Count
 		local _, burstSlider, burstFill, burstLabel, burstMin, burstMax = createSlider(combatPage, "Burst Count", 1, 10, State.burstCount)
 		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Camera follows target", State.lockOnEnabled)
-		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Auto Attack (F2)", "Kill Aura (estilo deob)", State.autoAttackEnabled)
+		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Kill Aura (F2)", "Auto attack nearest", State.autoAttackEnabled)
 		
 		createSectionHeader(combatPage, "Movement")
 		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "", State.speedEnabled)
 		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
 		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "", State.infiniteJumpEnabled)
 
+		-- ============================================================
 		-- VISUAL PAGE
+		-- ============================================================
 		createSectionHeader(visualPage, "NPC Visuals")
 		local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "", State.espEnabled)
 		local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "", State.tracersEnabled)
@@ -1239,7 +1263,9 @@ local GUI = (function()
 		local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "", State.playerESPEnabled)
 		local _, fovToggle, fovBg, fovCircle = createToggle(visualPage, "FOV Circle", "", State.fovEnabled)
 
+		-- ============================================================
 		-- TELEPORT PAGE
+		-- ============================================================
 		createSectionHeader(teleportPage, "Safe Teleport")
 		local tpInfo = Instance.new("Frame")
 		tpInfo.Size = Cache.UDim2_new(1,0,0,55)
@@ -1297,29 +1323,152 @@ local GUI = (function()
 		refreshBtn.MouseButton1Click:Connect(populateNPCList)
 		task.spawn(populateNPCList)
 
-		-- CONFIG PAGE
-		createSectionHeader(configPage, "Profile Manager")
-		local configInfo = Instance.new("Frame")
-		configInfo.Size = Cache.UDim2_new(1,0,0,45)
-		configInfo.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
-		configInfo.BackgroundTransparency = 0.9
-		configInfo.BorderSizePixel = 0
-		configInfo.Parent = configPage
-		local configCorner = Instance.new("UICorner"); configCorner.CornerRadius = UDim.new(0,6); configCorner.Parent = configInfo
-		local configLabel = Instance.new("TextLabel")
-		configLabel.Size = Cache.UDim2_new(1,-20,1,0)
-		configLabel.Position = Cache.UDim2_new(0,10,0,0)
-		configLabel.BackgroundTransparency = 1
-		configLabel.Text = "💾 Save/Load all hub settings\nProfiles stored in CyberHubConfigs folder"
-		configLabel.Font = Enum.Font.Gotham
-		configLabel.TextSize = 10
-		configLabel.TextColor3 = Cache.Color3_white
-		configLabel.TextWrapped = true
-		configLabel.TextXAlignment = Enum.TextXAlignment.Left
-		configLabel.Parent = configInfo
+		-- ============================================================
+		-- MISC PAGE
+		-- ============================================================
+		createSectionHeader(miscPage, "Misc")
+		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
 
+		-- ============================================================
+		-- CONFIG PAGE - REWRITTEN: ALL SETTINGS VISIBLE
+		-- ============================================================
+		createSectionHeader(configPage, "📋 ALL SETTINGS")
+
+		-- Informação
+		local cfgInfo = Instance.new("Frame")
+		cfgInfo.Size = Cache.UDim2_new(1,0,0,40)
+		cfgInfo.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+		cfgInfo.BackgroundTransparency = 0.85
+		cfgInfo.BorderSizePixel = 0
+		cfgInfo.Parent = configPage
+		local cfgInfoCorner = Instance.new("UICorner"); cfgInfoCorner.CornerRadius = UDim.new(0,6); cfgInfoCorner.Parent = cfgInfo
+		local cfgInfoLabel = Instance.new("TextLabel")
+		cfgInfoLabel.Size = Cache.UDim2_new(1,-20,1,0)
+		cfgInfoLabel.Position = Cache.UDim2_new(0,10,0,0)
+		cfgInfoLabel.BackgroundTransparency = 1
+		cfgInfoLabel.Text = "Todas as funções do hub em um só lugar. Ajuste e salve seu perfil."
+		cfgInfoLabel.Font = Enum.Font.Gotham
+		cfgInfoLabel.TextSize = 10
+		cfgInfoLabel.TextColor3 = Cache.Color3_white
+		cfgInfoLabel.TextWrapped = true
+		cfgInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+		cfgInfoLabel.Parent = cfgInfo
+
+		-- ---- Combat Settings ----
+		createSectionHeader(configPage, "⚔️ Combat")
+
+		-- Auto Farm
+		local _, cfgAutoFarmToggle, cfgAutoFarmBg, cfgAutoFarmCircle = createToggle(configPage, "Auto Farm", "Farm nearest NPC", State.autofarmEnabled)
+
+		-- Farm Mode (Behind / Above)
+		local cfgModeContainer = Instance.new("Frame")
+		cfgModeContainer.Size = Cache.UDim2_new(1,0,0,55)
+		cfgModeContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		cfgModeContainer.BorderSizePixel = 0
+		cfgModeContainer.Parent = configPage
+		local cfgModeCorner = Instance.new("UICorner"); cfgModeCorner.CornerRadius = UDim.new(0,6); cfgModeCorner.Parent = cfgModeContainer
+		local cfgModeLabel = Instance.new("TextLabel")
+		cfgModeLabel.Size = Cache.UDim2_new(1,-20,0,20)
+		cfgModeLabel.Position = Cache.UDim2_new(0,10,0,5)
+		cfgModeLabel.BackgroundTransparency = 1
+		cfgModeLabel.Text = "Farm Position"
+		cfgModeLabel.Font = Enum.Font.GothamBold
+		cfgModeLabel.TextSize = 11
+		cfgModeLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		cfgModeLabel.TextXAlignment = Enum.TextXAlignment.Left
+		cfgModeLabel.Parent = cfgModeContainer
+		local cfgModeBtnFrame = Instance.new("Frame")
+		cfgModeBtnFrame.Size = Cache.UDim2_new(1,-20,0,28)
+		cfgModeBtnFrame.Position = Cache.UDim2_new(0,10,0,25)
+		cfgModeBtnFrame.BackgroundTransparency = 1
+		cfgModeBtnFrame.Parent = cfgModeContainer
+		local cfgModeLayout = Instance.new("UIListLayout")
+		cfgModeLayout.FillDirection = Enum.FillDirection.Horizontal
+		cfgModeLayout.Padding = UDim.new(0,8)
+		cfgModeLayout.Parent = cfgModeBtnFrame
+		local configModeBehindBtn = Instance.new("TextButton")
+		configModeBehindBtn.Size = Cache.UDim2_new(0,130,0,26)
+		configModeBehindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40,40,55)
+		configModeBehindBtn.Text = "Behind"
+		configModeBehindBtn.Font = Enum.Font.GothamBold
+		configModeBehindBtn.TextSize = 11
+		configModeBehindBtn.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		configModeBehindBtn.BorderSizePixel = 0
+		configModeBehindBtn.AutoButtonColor = false
+		configModeBehindBtn.Parent = cfgModeBtnFrame
+		local configModeBehindCorner = Instance.new("UICorner"); configModeBehindCorner.CornerRadius = UDim.new(0,6); configModeBehindCorner.Parent = configModeBehindBtn
+		local configModeAboveBtn = configModeBehindBtn:Clone()
+		configModeAboveBtn.Text = "Above"
+		configModeAboveBtn.Parent = cfgModeBtnFrame
+		local function updateConfigModeVisuals()
+			local isBehind = (State.autofarmMode == "Behind")
+			configModeBehindBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
+			configModeBehindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
+			configModeAboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
+			configModeAboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			-- Sync combat page mode buttons
+			if behindBtn and aboveBtn then
+				behindBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
+				behindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
+				aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
+				aboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			end
+		end
+		configModeBehindBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Behind"; updateConfigModeVisuals() end)
+		configModeAboveBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Above"; updateConfigModeVisuals() end)
+		updateConfigModeVisuals()
+
+		-- Farm Distance slider (config page)
+		local _, cfgDistSlider, cfgDistFill, cfgDistLabel, cfgDistMin, cfgDistMax = createSlider(configPage, "Farm Distance", 1, 25, State.autofarmDistance)
+
+		-- Lock On
+		local _, cfgLockOnToggle, cfgLockOnBg, cfgLockOnCircle = createToggle(configPage, "Lock On", "Camera follows target", State.lockOnEnabled)
+
+		-- Kill Aura + Burst
+		local _, cfgKillAuraToggle, cfgKillAuraBg, cfgKillAuraCircle = createToggle(configPage, "Kill Aura (Keypad1)", "Auto attack nearest", State.autoAttackEnabled)
+		local _, cfgBurstSlider, cfgBurstFill, cfgBurstLabel, cfgBurstMin, cfgBurstMax = createSlider(configPage, "Burst Count", 1, 10, State.burstCount)
+
+		-- ---- Movement Settings ----
+		createSectionHeader(configPage, "🚀 Movement")
+
+		local _, cfgSpeedToggle, cfgSpeedBg, cfgSpeedCircle = createToggle(configPage, "Speed Boost (N)", "", State.speedEnabled)
+		local _, cfgSpeedSlider, cfgSpeedFill, cfgSpeedValLabel, cfgSpeedMin, cfgSpeedMax = createSlider(configPage, "Speed Value", 50, 300, State.speedValue)
+		local _, cfgJumpToggle, cfgJumpBg, cfgJumpCircle = createToggle(configPage, "Infinite Jump (Y)", "", State.infiniteJumpEnabled)
+		local _, cfgNoClipToggle, cfgNoClipBg, cfgNoClipCircle = createToggle(configPage, "No Clip", "Walk through walls", State.noClipEnabled)
+
+		-- ---- Visual Settings ----
+		createSectionHeader(configPage, "👁️ Visuals")
+
+		local _, cfgEspToggle, cfgEspBg, cfgEspCircle = createToggle(configPage, "ESP Highlights", "", State.espEnabled)
+		local _, cfgTracersToggle, cfgTracersBg, cfgTracersCircle = createToggle(configPage, "Tracers", "", State.tracersEnabled)
+		local _, cfgHealthBarsToggle, cfgHealthBarsBg, cfgHealthBarsCircle = createToggle(configPage, "Health Bars", "", State.healthBarsEnabled)
+		local _, cfgPlayerEspToggle, cfgPlayerEspBg, cfgPlayerEspCircle = createToggle(configPage, "Player ESP", "", State.playerESPEnabled)
+		local _, cfgFovToggle, cfgFovBg, cfgFovCircle = createToggle(configPage, "FOV Circle", "", State.fovEnabled)
+
+		-- ---- Profile Management ----
+		createSectionHeader(configPage, "💾 Profile Manager")
+
+		local profInfo = Instance.new("Frame")
+		profInfo.Size = Cache.UDim2_new(1,0,0,40)
+		profInfo.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		profInfo.BorderSizePixel = 0
+		profInfo.Parent = configPage
+		local profInfoCorner = Instance.new("UICorner"); profInfoCorner.CornerRadius = UDim.new(0,6); profInfoCorner.Parent = profInfo
+		local profInfoLabel = Instance.new("TextLabel")
+		profInfoLabel.Size = Cache.UDim2_new(1,-20,1,0)
+		profInfoLabel.Position = Cache.UDim2_new(0,10,0,0)
+		profInfoLabel.BackgroundTransparency = 1
+		profInfoLabel.Text = "Salve todas as configurações acima em um perfil. Use Autoload para carregar automaticamente."
+		profInfoLabel.Font = Enum.Font.Gotham
+		profInfoLabel.TextSize = 10
+		profInfoLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		profInfoLabel.TextWrapped = true
+		profInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+		profInfoLabel.Parent = profInfo
+
+		-- Nome do perfil
 		local nameContainer = Instance.new("Frame")
-		nameContainer.Size = Cache.UDim2_new(1,0,0,45)
+		nameContainer.Size = Cache.UDim2_new(1,0,0,40)
 		nameContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		nameContainer.BorderSizePixel = 0
 		nameContainer.Parent = configPage
@@ -1346,28 +1495,30 @@ local GUI = (function()
 		nameBox.Parent = nameContainer
 		local nameBoxCorner = Instance.new("UICorner"); nameBoxCorner.CornerRadius = UDim.new(0,4); nameBoxCorner.Parent = nameBox
 
+		-- Botões de perfil
 		local btnContainer = Instance.new("Frame")
-		btnContainer.Size = Cache.UDim2_new(1,0,0,45)
+		btnContainer.Size = Cache.UDim2_new(1,0,0,40)
 		btnContainer.BackgroundTransparency = 1
 		btnContainer.Parent = configPage
 		local btnLayout = Instance.new("UIListLayout")
 		btnLayout.FillDirection = Enum.FillDirection.Horizontal
 		btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		btnLayout.Padding = UDim.new(0,6)
+		btnLayout.Padding = UDim.new(0,4)
 		btnLayout.Parent = btnContainer
-		local saveBtn = createButton(btnContainer, "Save", Cache.Color3_fromRGB(80,200,120))
-		local loadBtn = createButton(btnContainer, "Load", Cache.Color3_fromRGB(100,180,255))
-		local overwriteBtn = createButton(btnContainer, "Overwrite", Cache.Color3_fromRGB(255,180,80))
-		local deleteBtn = createButton(btnContainer, "Delete", Cache.Color3_fromRGB(220,80,80))
-		local autoloadBtn = createButton(btnContainer, "Autoload", Cache.Color3_fromRGB(255,180,80))
-		saveBtn.Size = Cache.UDim2_new(0,65,0,30)
-		loadBtn.Size = Cache.UDim2_new(0,65,0,30)
-		overwriteBtn.Size = Cache.UDim2_new(0,85,0,30)
-		deleteBtn.Size = Cache.UDim2_new(0,65,0,30)
-		autoloadBtn.Size = Cache.UDim2_new(0,75,0,30)
+		local saveBtn = createSmallButton(btnContainer, "Save", Cache.Color3_fromRGB(80,200,120), 60)
+		local loadBtn = createSmallButton(btnContainer, "Load", Cache.Color3_fromRGB(100,180,255), 60)
+		local overwriteBtn = createSmallButton(btnContainer, "Overwrite", Cache.Color3_fromRGB(255,180,80), 75)
+		local deleteBtn = createSmallButton(btnContainer, "Delete", Cache.Color3_fromRGB(220,80,80), 60)
+		local autoloadBtn = createSmallButton(btnContainer, "Autoload", Cache.Color3_fromRGB(200,150,255), 70)
+		saveBtn.Size = Cache.UDim2_new(0,60,0,30)
+		loadBtn.Size = Cache.UDim2_new(0,60,0,30)
+		overwriteBtn.Size = Cache.UDim2_new(0,75,0,30)
+		deleteBtn.Size = Cache.UDim2_new(0,60,0,30)
+		autoloadBtn.Size = Cache.UDim2_new(0,70,0,30)
 
+		-- Lista de perfis
 		local profileList = Instance.new("ScrollingFrame")
-		profileList.Size = Cache.UDim2_new(1,0,0,140)
+		profileList.Size = Cache.UDim2_new(1,0,0,120)
 		profileList.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		profileList.BorderSizePixel = 0
 		profileList.CanvasSize = Cache.UDim2_new(0,0,0,0)
@@ -1383,11 +1534,11 @@ local GUI = (function()
 			local names = ConfigManager.listConfigs()
 			for _,name in ipairs(names) do
 				local btn = Instance.new("TextButton")
-				btn.Size = Cache.UDim2_new(1,-10,0,28)
+				btn.Size = Cache.UDim2_new(1,-10,0,26)
 				btn.BackgroundColor3 = (selectedName == name) and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(25,25,35)
 				btn.Text = "   📄 "..name
 				btn.Font = Enum.Font.Gotham
-				btn.TextSize = 11
+				btn.TextSize = 10
 				btn.TextColor3 = (selectedName == name) and Cache.Color3_white or Cache.Color3_fromRGB(200,200,210)
 				btn.TextXAlignment = Enum.TextXAlignment.Left
 				btn.BorderSizePixel = 0
@@ -1398,9 +1549,10 @@ local GUI = (function()
 					refreshProfileList(name)
 				end)
 			end
-			profileList.CanvasSize = Cache.UDim2_new(0,0,0, #names * 32 + 10)
+			profileList.CanvasSize = Cache.UDim2_new(0,0,0, #names * 30 + 10)
 		end
 
+		-- Ações dos botões
 		saveBtn.MouseButton1Click:Connect(function()
 			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
 			ConfigManager.saveConfig(n)
@@ -1410,11 +1562,23 @@ local GUI = (function()
 			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
 			ConfigManager.loadConfig(n)
 			refreshProfileList(n)
-			updateModeVisuals()
+			-- Atualiza todos os toggles visuais
+			updateConfigModeVisuals()
 			for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
-			-- Atualiza o valor do slider de burst também
+			for k,v in pairs(configToggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+			-- Atualiza sliders
+			cfgDistLabel.Text = tostring(State.autofarmDistance)
+			cfgDistFill.Size = Cache.UDim2_new((State.autofarmDistance - cfgDistMin)/(cfgDistMax - cfgDistMin),0,1,0)
+			distLabel.Text = tostring(State.autofarmDistance)
+			distFill.Size = Cache.UDim2_new((State.autofarmDistance - distMin)/(distMax - distMin),0,1,0)
+			cfgBurstLabel.Text = tostring(State.burstCount)
+			cfgBurstFill.Size = Cache.UDim2_new((State.burstCount - cfgBurstMin)/(cfgBurstMax - cfgBurstMin),0,1,0)
 			burstLabel.Text = tostring(State.burstCount)
 			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
+			cfgSpeedValLabel.Text = tostring(State.speedValue)
+			cfgSpeedFill.Size = Cache.UDim2_new((State.speedValue - cfgSpeedMin)/(cfgSpeedMax - cfgSpeedMin),0,1,0)
+			speedValLabel.Text = tostring(State.speedValue)
+			speedFill.Size = Cache.UDim2_new((State.speedValue - speedMin)/(speedMax - speedMin),0,1,0)
 		end)
 		overwriteBtn.MouseButton1Click:Connect(function()
 			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
@@ -1432,14 +1596,13 @@ local GUI = (function()
 		end)
 		refreshProfileList()
 
-		-- MISC PAGE
-		createSectionHeader(miscPage, "Misc")
-		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
-
-		-- TOGGLE FUNCTIONS
+		-- ============================================================
+		-- TOGGLE FUNCTIONS (principais)
+		-- ============================================================
 		ToggleFunctions.autofarm = function(enabled)
 			State.autofarmEnabled = enabled
 			Utils.animateToggle(autofarmBg, autofarmCircle, enabled)
+			Utils.animateToggle(cfgAutoFarmBg, cfgAutoFarmCircle, enabled)
 			if enabled then
 				Utils.disconnectConnection("autofarm")
 				State.connections.autofarm = Services.RunService.Heartbeat:Connect(Combat.autofarmLoop)
@@ -1449,10 +1612,12 @@ local GUI = (function()
 			end
 		end
 		autofarmToggle.MouseButton1Click:Connect(function() ToggleFunctions.autofarm(not State.autofarmEnabled) end)
+		cfgAutoFarmToggle.MouseButton1Click:Connect(function() ToggleFunctions.autofarm(not State.autofarmEnabled) end)
 
 		ToggleFunctions.lockOn = function(enabled)
 			State.lockOnEnabled = enabled
 			Utils.animateToggle(lockOnBg, lockOnCircle, enabled)
+			Utils.animateToggle(cfgLockOnBg, cfgLockOnCircle, enabled)
 			if enabled then
 				Utils.disconnectConnection("lockOn")
 				State.connections.lockOn = Services.RunService.RenderStepped:Connect(Combat.lockOnLoop)
@@ -1462,10 +1627,12 @@ local GUI = (function()
 			end
 		end
 		lockOnToggle.MouseButton1Click:Connect(function() ToggleFunctions.lockOn(not State.lockOnEnabled) end)
+		cfgLockOnToggle.MouseButton1Click:Connect(function() ToggleFunctions.lockOn(not State.lockOnEnabled) end)
 
 		ToggleFunctions.autoAttack = function(enabled)
 			State.autoAttackEnabled = enabled
 			Utils.animateToggle(autoAttackBg, autoAttackCircle, enabled)
+			Utils.animateToggle(cfgKillAuraBg, cfgKillAuraCircle, enabled)
 			if enabled then
 				Combat.startAutoAttack()
 			else
@@ -1473,10 +1640,12 @@ local GUI = (function()
 			end
 		end
 		autoAttackToggle.MouseButton1Click:Connect(function() ToggleFunctions.autoAttack(not State.autoAttackEnabled) end)
+		cfgKillAuraToggle.MouseButton1Click:Connect(function() ToggleFunctions.autoAttack(not State.autoAttackEnabled) end)
 
 		ToggleFunctions.speed = function(enabled)
 			State.speedEnabled = enabled
 			Utils.animateToggle(speedBg, speedCircle, enabled)
+			Utils.animateToggle(cfgSpeedBg, cfgSpeedCircle, enabled)
 			if enabled then
 				Utils.disconnectConnection("speed")
 				State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
@@ -1485,16 +1654,20 @@ local GUI = (function()
 			end
 		end
 		speedToggle.MouseButton1Click:Connect(function() ToggleFunctions.speed(not State.speedEnabled) end)
+		cfgSpeedToggle.MouseButton1Click:Connect(function() ToggleFunctions.speed(not State.speedEnabled) end)
 
 		ToggleFunctions.infiniteJump = function(enabled)
 			State.infiniteJumpEnabled = enabled
 			Utils.animateToggle(jumpBg, jumpCircle, enabled)
+			Utils.animateToggle(cfgJumpBg, cfgJumpCircle, enabled)
 		end
 		jumpToggle.MouseButton1Click:Connect(function() ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled) end)
+		cfgJumpToggle.MouseButton1Click:Connect(function() ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled) end)
 
 		ToggleFunctions.noClip = function(enabled)
 			State.noClipEnabled = enabled
 			Utils.animateToggle(noClipBg, noClipCircle, enabled)
+			Utils.animateToggle(cfgNoClipBg, cfgNoClipCircle, enabled)
 			if enabled then
 				Movement.enableNoClip()
 				Utils.disconnectConnection("noClip")
@@ -1505,41 +1678,55 @@ local GUI = (function()
 			end
 		end
 		noClipToggle.MouseButton1Click:Connect(function() ToggleFunctions.noClip(not State.noClipEnabled) end)
+		cfgNoClipToggle.MouseButton1Click:Connect(function() ToggleFunctions.noClip(not State.noClipEnabled) end)
 
 		ToggleFunctions.esp = function(enabled)
 			State.espEnabled = enabled
 			Utils.animateToggle(espBg, espCircle, enabled)
+			Utils.animateToggle(cfgEspBg, cfgEspCircle, enabled)
 			if not enabled then ESP.clearAllESP() end
 		end
 		espToggle.MouseButton1Click:Connect(function() ToggleFunctions.esp(not State.espEnabled) end)
+		cfgEspToggle.MouseButton1Click:Connect(function() ToggleFunctions.esp(not State.espEnabled) end)
 
 		ToggleFunctions.tracers = function(enabled)
 			State.tracersEnabled = enabled
 			Utils.animateToggle(tracersBg, tracersCircle, enabled)
+			Utils.animateToggle(cfgTracersBg, cfgTracersCircle, enabled)
 			if not enabled then ESP.clearAllTracers() end
 		end
 		tracersToggle.MouseButton1Click:Connect(function() ToggleFunctions.tracers(not State.tracersEnabled) end)
+		cfgTracersToggle.MouseButton1Click:Connect(function() ToggleFunctions.tracers(not State.tracersEnabled) end)
 
 		ToggleFunctions.healthBars = function(enabled)
 			State.healthBarsEnabled = enabled
 			Utils.animateToggle(healthBarsBg, healthBarsCircle, enabled)
+			Utils.animateToggle(cfgHealthBarsBg, cfgHealthBarsCircle, enabled)
 			if not enabled then ESP.clearAllHealthBars() end
 		end
 		healthBarsToggle.MouseButton1Click:Connect(function() ToggleFunctions.healthBars(not State.healthBarsEnabled) end)
+		cfgHealthBarsToggle.MouseButton1Click:Connect(function() ToggleFunctions.healthBars(not State.healthBarsEnabled) end)
 
 		ToggleFunctions.playerESP = function(enabled)
 			State.playerESPEnabled = enabled
 			Utils.animateToggle(playerESPBg, playerESPCircle, enabled)
+			Utils.animateToggle(cfgPlayerEspBg, cfgPlayerEspCircle, enabled)
 		end
 		playerESPToggle.MouseButton1Click:Connect(function() ToggleFunctions.playerESP(not State.playerESPEnabled) end)
+		cfgPlayerEspToggle.MouseButton1Click:Connect(function() ToggleFunctions.playerESP(not State.playerESPEnabled) end)
 
 		ToggleFunctions.fov = function(enabled)
 			State.fovEnabled = enabled
 			Utils.animateToggle(fovBg, fovCircle, enabled)
+			Utils.animateToggle(cfgFovBg, cfgFovCircle, enabled)
 			if enabled then ESP.createFOVCircle() else ESP.removeFOVCircle() end
 		end
 		fovToggle.MouseButton1Click:Connect(function() ToggleFunctions.fov(not State.fovEnabled) end)
+		cfgFovToggle.MouseButton1Click:Connect(function() ToggleFunctions.fov(not State.fovEnabled) end)
 
+		-- ============================================================
+		-- HANDLE SLIDERS
+		-- ============================================================
 		local function handleSlider(btn, fill, label, minV, maxV, precision, callback)
 			local dragging = false
 			btn.MouseButton1Down:Connect(function() dragging = true end)
@@ -1558,18 +1745,56 @@ local GUI = (function()
 			end)
 		end
 
+		-- Combat page sliders
 		handleSlider(distSlider, distFill, distLabel, distMin, distMax, 10, function(v) State.autofarmDistance = v end)
-		handleSlider(speedSlider, speedFill, speedValLabel, speedMin, speedMax, 1, function(v) State.speedValue = v end)
-		-- Slider para Burst Count (valor inteiro)
 		handleSlider(burstSlider, burstFill, burstLabel, burstMin, burstMax, 1, function(v) State.burstCount = v end)
+		handleSlider(speedSlider, speedFill, speedValLabel, speedMin, speedMax, 1, function(v) State.speedValue = v end)
 
+		-- Config page sliders
+		handleSlider(cfgDistSlider, cfgDistFill, cfgDistLabel, cfgDistMin, cfgDistMax, 10, function(v)
+			State.autofarmDistance = v
+			distLabel.Text = tostring(v)
+			distFill.Size = Cache.UDim2_new((v - distMin)/(distMax - distMin),0,1,0)
+		end)
+		handleSlider(cfgBurstSlider, cfgBurstFill, cfgBurstLabel, cfgBurstMin, cfgBurstMax, 1, function(v)
+			State.burstCount = v
+			burstLabel.Text = tostring(v)
+			burstFill.Size = Cache.UDim2_new((v - burstMin)/(burstMax - burstMin),0,1,0)
+		end)
+		handleSlider(cfgSpeedSlider, cfgSpeedFill, cfgSpeedValLabel, cfgSpeedMin, cfgSpeedMax, 1, function(v)
+			State.speedValue = v
+			speedValLabel.Text = tostring(v)
+			speedFill.Size = Cache.UDim2_new((v - speedMin)/(speedMax - speedMin),0,1,0)
+		end)
+
+		-- ============================================================
+		-- REGISTRA REFERÊNCIAS PARA SYNC
+		-- ============================================================
 		toggleRefs = {
-			autofarmEnabled={bg=autofarmBg, circle=autofarmCircle}, lockOnEnabled={bg=lockOnBg, circle=lockOnCircle},
-			autoAttackEnabled={bg=autoAttackBg, circle=autoAttackCircle}, speedEnabled={bg=speedBg, circle=speedCircle},
-			infiniteJumpEnabled={bg=jumpBg, circle=jumpCircle}, noClipEnabled={bg=noClipBg, circle=noClipCircle},
-			espEnabled={bg=espBg, circle=espCircle}, tracersEnabled={bg=tracersBg, circle=tracersCircle},
-			healthBarsEnabled={bg=healthBarsBg, circle=healthBarsCircle}, playerESPEnabled={bg=playerESPBg, circle=playerESPCircle},
+			autofarmEnabled={bg=autofarmBg, circle=autofarmCircle},
+			lockOnEnabled={bg=lockOnBg, circle=lockOnCircle},
+			autoAttackEnabled={bg=autoAttackBg, circle=autoAttackCircle},
+			speedEnabled={bg=speedBg, circle=speedCircle},
+			infiniteJumpEnabled={bg=jumpBg, circle=jumpCircle},
+			noClipEnabled={bg=noClipBg, circle=noClipCircle},
+			espEnabled={bg=espBg, circle=espCircle},
+			tracersEnabled={bg=tracersBg, circle=tracersCircle},
+			healthBarsEnabled={bg=healthBarsBg, circle=healthBarsCircle},
+			playerESPEnabled={bg=playerESPBg, circle=playerESPCircle},
 			fovEnabled={bg=fovBg, circle=fovCircle},
+		}
+		configToggleRefs = {
+			autofarmEnabled={bg=cfgAutoFarmBg, circle=cfgAutoFarmCircle},
+			lockOnEnabled={bg=cfgLockOnBg, circle=cfgLockOnCircle},
+			autoAttackEnabled={bg=cfgKillAuraBg, circle=cfgKillAuraCircle},
+			speedEnabled={bg=cfgSpeedBg, circle=cfgSpeedCircle},
+			infiniteJumpEnabled={bg=cfgJumpBg, circle=cfgJumpCircle},
+			noClipEnabled={bg=cfgNoClipBg, circle=cfgNoClipCircle},
+			espEnabled={bg=cfgEspBg, circle=cfgEspCircle},
+			tracersEnabled={bg=cfgTracersBg, circle=cfgTracersCircle},
+			healthBarsEnabled={bg=cfgHealthBarsBg, circle=cfgHealthBarsCircle},
+			playerESPEnabled={bg=cfgPlayerEspBg, circle=cfgPlayerEspCircle},
+			fovEnabled={bg=cfgFovBg, circle=cfgFovCircle},
 		}
 
 		screenGui.Destroying:Connect(function()
@@ -1579,12 +1804,20 @@ local GUI = (function()
 			Combat.stopAutoAttack()
 		end)
 
-		return { screenGui=screenGui, mainFrame=mainFrame, ToggleFunctions=ToggleFunctions, refreshToggles=function()
-			for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
-			-- Atualiza o valor do burst na GUI
-			burstLabel.Text = tostring(State.burstCount)
-			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
-		end }
+		return {
+			screenGui=screenGui,
+			mainFrame=mainFrame,
+			ToggleFunctions=ToggleFunctions,
+			refreshToggles=function()
+				for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+				for k,v in pairs(configToggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+				cfgBurstLabel.Text = tostring(State.burstCount)
+				cfgBurstFill.Size = Cache.UDim2_new((State.burstCount - cfgBurstMin)/(cfgBurstMax - cfgBurstMin),0,1,0)
+				burstLabel.Text = tostring(State.burstCount)
+				burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
+				updateConfigModeVisuals()
+			end
+		}
 	end
 
 	return { build=build, getToggleFunctions=function() return ToggleFunctions end }
@@ -1611,17 +1844,19 @@ local Input = (function()
 			if input.KeyCode == Enum.KeyCode.F1 then
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
-			elseif input.KeyCode == Enum.KeyCode.F2 then
+			-- NOVAS BINDS:
+			elseif input.KeyCode == Enum.KeyCode.Keypad1 then      -- Keypad1 → Kill Aura
 				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
-			elseif input.KeyCode == Enum.KeyCode.F3 then
+			elseif input.KeyCode == Enum.KeyCode.Keypad2 then      -- Keypad2 → Auto Farm
 				ToggleFunctions.autofarm(not State.autofarmEnabled)
-			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
+			elseif input.KeyCode == Enum.KeyCode.N then            -- N → Speed
 				ToggleFunctions.speed(not State.speedEnabled)
-			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
+			elseif input.KeyCode == Enum.KeyCode.Y then            -- Y → Infinite Jump
 				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
-			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
+			-- Mantidas:
+			elseif input.KeyCode == Enum.KeyCode.KeypadZero then   -- KeypadZero → ESP
 				ToggleFunctions.esp(not State.espEnabled)
-			elseif input.KeyCode == Enum.KeyCode.KeypadThree then
+			elseif input.KeyCode == Enum.KeyCode.KeypadThree then  -- KeypadThree → Health Bars
 				ToggleFunctions.healthBars(not State.healthBarsEnabled)
 			end
 		end)
@@ -1655,14 +1890,11 @@ GUI.refreshToggles = guiResult.refreshToggles
 
 Input.init(mainFrame, ToggleFunctions)
 
--- Atualização de câmera a cada frame (cache)
 Utils.updateCameraCache()
 Core.Services.RunService.RenderStepped:Connect(function()
 	Utils.updateCameraCache()
 end)
 
--- Atualizações visuais otimizadas:
--- 1. ESP, Health Bars, Player ESP: a cada 0.1s via Heartbeat
 local visualUpdateInterval = 0.1
 local lastVisualUpdate = 0
 Core.Services.RunService.Heartbeat:Connect(function(delta)
@@ -1674,7 +1906,6 @@ Core.Services.RunService.Heartbeat:Connect(function(delta)
 	end
 end)
 
--- 2. Tracers e FOV: a cada RenderStepped (sincronizado com a câmera)
 Core.Services.RunService.RenderStepped:Connect(function()
 	ESP.updateTracersAndFOV()
 end)
@@ -1694,11 +1925,13 @@ print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
 print("  🔥  Burst Count: ajustável (1-10)")
 print("═══════════════════════════════════════════════")
-print("  F1  - Toggle GUI")
-print("  F2  - Toggle Kill Aura")
-print("  F3  - Toggle Autofarm")
-print("  KP1 - Toggle Speed")
-print("  KP2 - Toggle Infinite Jump")
+print("  F1     - Toggle GUI")
+print("  Keypad1 - Toggle Kill Aura")
+print("  Keypad2 - Toggle Autofarm")
+print("  N      - Toggle Speed")
+print("  Y      - Toggle Infinite Jump")
+print("  KP0    - Toggle ESP")
+print("  KP3    - Toggle Health Bars")
 print("═══════════════════════════════════════════════")
 
 return {
