@@ -857,15 +857,15 @@ local GUI = (function()
 	local resizeStartPos, resizeStartSize
 
 	-- Cores do tema (roxo/preto/transparente)
-	local bgMain = Color3.fromRGB(8, 4, 16)          -- quase preto com tom roxo
-	local bgPanel = Color3.fromRGB(25, 15, 45)        -- roxo escuro translúcido
-	local bgAccent = Color3.fromRGB(120, 60, 220)     -- roxo vibrante
+	local bgMain = Color3.fromRGB(8, 4, 16)
+	local bgPanel = Color3.fromRGB(25, 15, 45)
+	local bgAccent = Color3.fromRGB(120, 60, 220)
 	local bgAccentLight = Color3.fromRGB(170, 110, 240)
 	local textLight = Color3.fromRGB(235, 225, 245)
 	local textDim = Color3.fromRGB(175, 165, 195)
 	local borderColor = Color3.fromRGB(80, 50, 130)
 
-	-- Funções auxiliares de criação (design translúcido)
+	-- Funções auxiliares
 	local function createSectionHeader(parent, text)
 		local frame = Instance.new("Frame")
 		frame.Size = Cache.UDim2_new(1, 0, 0, 28)
@@ -884,7 +884,6 @@ local GUI = (function()
 		label.TextColor3 = textLight
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Parent = frame
-
 		return frame
 	end
 
@@ -924,7 +923,6 @@ local GUI = (function()
 			desc.Parent = container
 		end
 
-		-- Toggle switch
 		local toggleBg = Instance.new("Frame")
 		toggleBg.Size = Cache.UDim2_new(0, 38, 0, 20)
 		toggleBg.Position = Cache.UDim2_new(1, -45, 0, descText and 14 or 10)
@@ -955,7 +953,6 @@ local GUI = (function()
 		toggleBtn.Text = ""
 		toggleBtn.Parent = toggleBg
 
-		-- Bind button (mostra a tecla)
 		local bindBtn = nil
 		if bindKey then
 			bindBtn = Instance.new("TextButton")
@@ -1060,7 +1057,6 @@ local GUI = (function()
 		local corner = Instance.new("UICorner")
 		corner.CornerRadius = UDim.new(0, 6)
 		corner.Parent = btn
-
 		return btn
 	end
 
@@ -1087,7 +1083,6 @@ local GUI = (function()
 		padding.PaddingTop = UDim.new(0, 2)
 		padding.PaddingBottom = UDim.new(0, 2)
 		padding.Parent = page
-
 		return page
 	end
 
@@ -1108,23 +1103,79 @@ local GUI = (function()
 		local corner = Instance.new("UICorner")
 		corner.CornerRadius = UDim.new(0, 8)
 		corner.Parent = btn
-
 		return btn
 	end
 
+	-- Variáveis globais para as funções de toggle e binds
 	local ToggleFunctions = {}
 	local pendingBind = nil
-
-	local function startBindCapture(bindBtn, keyName, callback)
-		pendingBind = { btn = bindBtn, key = keyName, cb = callback }
-		bindBtn.Text = "..."
-	end
 
 	local function getKeyName(key)
 		if type(key) == "EnumItem" then
 			return tostring(key):gsub("Enum.KeyCode.", "")
 		else
 			return tostring(key)
+		end
+	end
+
+	local function startBindCapture(bindBtn, keyName, callback)
+		pendingBind = { btn = bindBtn, key = keyName, cb = callback }
+		bindBtn.Text = "..."
+	end
+
+	-- Função para criar abas internas (sub-tabs)
+	local function createSubTabs(parent, tabNames, tabPanels)
+		local tabContainer = Instance.new("Frame")
+		tabContainer.Size = Cache.UDim2_new(1, 0, 0, 36)
+		tabContainer.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
+		tabContainer.BackgroundTransparency = 0.8
+		tabContainer.BorderSizePixel = 0
+		tabContainer.Parent = parent
+
+		local layout = Instance.new("UIListLayout")
+		layout.FillDirection = Enum.FillDirection.Horizontal
+		layout.Padding = UDim.new(0, 4)
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.Parent = tabContainer
+
+		local padding = Instance.new("UIPadding")
+		padding.PaddingLeft = UDim.new(0, 4)
+		padding.PaddingTop = UDim.new(0, 4)
+		padding.PaddingBottom = UDim.new(0, 4)
+		padding.Parent = tabContainer
+
+		local buttons = {}
+		for i, name in ipairs(tabNames) do
+			local btn = Instance.new("TextButton")
+			btn.Size = Cache.UDim2_new(0, 100, 0, 28)
+			btn.BackgroundColor3 = (i == 1) and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
+			btn.BackgroundTransparency = 0.6
+			btn.Text = name
+			btn.Font = Enum.Font.GothamBold
+			btn.TextSize = 11
+			btn.TextColor3 = textLight
+			btn.BorderSizePixel = 0
+			btn.AutoButtonColor = false
+			btn.Parent = tabContainer
+
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(0, 6)
+			corner.Parent = btn
+
+			btn.MouseButton1Click:Connect(function()
+				for j, b in ipairs(buttons) do
+					b.BackgroundColor3 = (j == i) and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
+				end
+				for j, panel in ipairs(tabPanels) do
+					panel.Visible = (j == i)
+				end
+			end)
+			table.insert(buttons, btn)
+		end
+
+		-- Inicialmente mostra o primeiro painel
+		for i, panel in ipairs(tabPanels) do
+			panel.Visible = (i == 1)
 		end
 	end
 
@@ -1224,7 +1275,7 @@ local GUI = (function()
 		sidebarPadding.PaddingBottom = UDim.new(0, 8)
 		sidebarPadding.Parent = sidebar
 
-		-- Botões da sidebar (texto curto sem emojis)
+		-- Botões laterais (sem emojis)
 		local combatBtn = createSidebarBtn(sidebar, "CMB", "CombatBtn")
 		local visualBtn = createSidebarBtn(sidebar, "VIS", "VisualBtn")
 		local teleportBtn = createSidebarBtn(sidebar, "TLP", "TeleportBtn")
@@ -1245,67 +1296,10 @@ local GUI = (function()
 		local configPage = createPage("ConfigPage", contentArea)
 		local miscPage = createPage("MiscPage", contentArea)
 
-		-- Função para criar abas internas (sub-tabs)
-		local function createSubTabs(parent, tabNames, tabPanels)
-			local tabContainer = Instance.new("Frame")
-			tabContainer.Size = Cache.UDim2_new(1, 0, 0, 36)
-			tabContainer.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
-			tabContainer.BackgroundTransparency = 0.8
-			tabContainer.BorderSizePixel = 0
-			tabContainer.Parent = parent
-
-			local layout = Instance.new("UIListLayout")
-			layout.FillDirection = Enum.FillDirection.Horizontal
-			layout.Padding = UDim.new(0, 4)
-			layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-			layout.Parent = tabContainer
-
-			local padding = Instance.new("UIPadding")
-			padding.PaddingLeft = UDim.new(0, 4)
-			padding.PaddingTop = UDim.new(0, 4)
-			padding.PaddingBottom = UDim.new(0, 4)
-			padding.Parent = tabContainer
-
-			local buttons = {}
-			for i, name in ipairs(tabNames) do
-				local btn = Instance.new("TextButton")
-				btn.Size = Cache.UDim2_new(0, 100, 0, 28)
-				btn.BackgroundColor3 = (i == 1) and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
-				btn.BackgroundTransparency = 0.6
-				btn.Text = name
-				btn.Font = Enum.Font.GothamBold
-				btn.TextSize = 11
-				btn.TextColor3 = textLight
-				btn.BorderSizePixel = 0
-				btn.AutoButtonColor = false
-				btn.Parent = tabContainer
-
-				local corner = Instance.new("UICorner")
-				corner.CornerRadius = UDim.new(0, 6)
-				corner.Parent = btn
-
-				btn.MouseButton1Click:Connect(function()
-					for j, b in ipairs(buttons) do
-						b.BackgroundColor3 = (j == i) and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
-					end
-					for j, panel in ipairs(tabPanels) do
-						panel.Visible = (j == i)
-					end
-				end)
-				table.insert(buttons, btn)
-			end
-
-			-- Painéis (cada um é um frame que conterá os controles)
-			for i, panel in ipairs(tabPanels) do
-				panel.Visible = (i == 1)
-			end
-		end
-
-		-- ==================== PÁGINA COMBAT ====================
-		-- Criamos painéis para as sub-abas: Autofarm, Kill Aura, Farm Config
+		-- ========== PÁGINA COMBAT ==========
+		-- Criar painéis para sub-abas
 		local combatPanels = {}
 		local combatTabNames = {"Autofarm", "Kill Aura", "Farm Config"}
-
 		for i = 1, 3 do
 			local panel = Instance.new("ScrollingFrame")
 			panel.Size = Cache.UDim2_new(1, 0, 1, -40)
@@ -1330,23 +1324,22 @@ local GUI = (function()
 			padding.PaddingRight = UDim.new(0, 4)
 			padding.Parent = panel
 		end
-
 		createSubTabs(combatPage, combatTabNames, combatPanels)
 
 		local autofarmPanel = combatPanels[1]
 		local killAuraPanel = combatPanels[2]
 		local farmConfigPanel = combatPanels[3]
 
-		-- Autofarm panel
+		-- Autofarm
 		local _, autofarmToggle, autofarmBg, autofarmCircle, autofarmBind = createToggle(autofarmPanel, "Auto Farm", "Farm nearest NPC", State.autofarmEnabled, State.keybinds.toggleAutofarm)
 		local _, lockOnToggle, lockOnBg, lockOnCircle, lockOnBind = createToggle(autofarmPanel, "Lock On", "Camera follows target", State.lockOnEnabled, nil)
 
-		-- Kill Aura panel
+		-- Kill Aura
 		local _, autoAttackToggle, autoAttackBg, autoAttackCircle, autoAttackBind = createToggle(killAuraPanel, "Auto Attack", "Kill Aura", State.autoAttackEnabled, State.keybinds.toggleAutoAttack)
 		local _, speedToggle, speedBg, speedCircle, speedBind = createToggle(killAuraPanel, "Speed Boost", "", State.speedEnabled, State.keybinds.toggleSpeed)
 		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(killAuraPanel, "Speed Value", 50, 300, State.speedValue)
 
-		-- Farm Config panel
+		-- Farm Config
 		local modeContainer = Instance.new("Frame")
 		modeContainer.Size = Cache.UDim2_new(1, 0, 0, 56)
 		modeContainer.BackgroundColor3 = bgPanel
@@ -1407,7 +1400,6 @@ local GUI = (function()
 			aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40, 30, 65) or bgAccent
 			aboveBtn.TextColor3 = isBehind and textDim or Cache.Color3_white
 		end
-
 		behindBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Behind"; updateModeVisuals() end)
 		aboveBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Above"; updateModeVisuals() end)
 		updateModeVisuals()
@@ -1415,7 +1407,7 @@ local GUI = (function()
 		local _, distSlider, distFill, distLabel, distMin, distMax = createSlider(farmConfigPanel, "Farm Distance", 1, 25, State.autofarmDistance)
 		local _, burstSlider, burstFill, burstLabel, burstMin, burstMax = createSlider(farmConfigPanel, "Burst Count", 1, 10, State.burstCount)
 
-		-- ==================== PÁGINA VISUAL ====================
+		-- ========== PÁGINA VISUAL ==========
 		createSectionHeader(visualPage, "NPC Visuals")
 		local _, espToggle, espBg, espCircle, espBind = createToggle(visualPage, "ESP Highlights", "", State.espEnabled, State.keybinds.toggleESP)
 		local _, tracersToggle, tracersBg, tracersCircle, tracersBind = createToggle(visualPage, "Tracers", "", State.tracersEnabled, nil)
@@ -1425,7 +1417,7 @@ local GUI = (function()
 		local _, playerESPToggle, playerESPBg, playerESPCircle, playerESPBind = createToggle(visualPage, "Player ESP", "", State.playerESPEnabled, nil)
 		local _, fovToggle, fovBg, fovCircle, fovBind = createToggle(visualPage, "FOV Circle", "", State.fovEnabled, nil)
 
-		-- ==================== PÁGINA TELEPORT ====================
+		-- ========== PÁGINA TELEPORT ==========
 		createSectionHeader(teleportPage, "Safe Teleport")
 		local tpInfo = Instance.new("Frame")
 		tpInfo.Size = Cache.UDim2_new(1, 0, 0, 50)
@@ -1498,11 +1490,10 @@ local GUI = (function()
 			end
 			npcListFrame.CanvasSize = Cache.UDim2_new(0, 0, 0, #Teleport.getNPCList() * 32 + 10)
 		end
-
 		refreshBtn.MouseButton1Click:Connect(populateNPCList)
 		task.spawn(populateNPCList)
 
-		-- ==================== PÁGINA CONFIG ====================
+		-- ========== PÁGINA CONFIG ==========
 		createSectionHeader(configPage, "Profile Manager")
 		local configInfo = Instance.new("Frame")
 		configInfo.Size = Cache.UDim2_new(1, 0, 0, 45)
@@ -1581,7 +1572,6 @@ local GUI = (function()
 		local overwriteBtn = createButton(btnContainer, "Overwrite", Cache.Color3_fromRGB(255, 180, 80))
 		local deleteBtn = createButton(btnContainer, "Delete", Cache.Color3_fromRGB(220, 80, 80))
 		local autoloadBtn = createButton(btnContainer, "Autoload", Cache.Color3_fromRGB(255, 180, 80))
-
 		saveBtn.Size = Cache.UDim2_new(0, 65, 0, 28)
 		loadBtn.Size = Cache.UDim2_new(0, 65, 0, 28)
 		overwriteBtn.Size = Cache.UDim2_new(0, 85, 0, 28)
@@ -1648,10 +1638,7 @@ local GUI = (function()
 			for k, v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
 			burstLabel.Text = tostring(State.burstCount)
 			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin), 0, 1, 0)
-			-- Atualizar binds
-			for _, info in pairs(bindButtons) do
-				if info.update then info.update() end
-			end
+			for _, info in pairs(bindButtons) do if info.update then info.update() end end
 		end)
 
 		overwriteBtn.MouseButton1Click:Connect(function()
@@ -1673,12 +1660,12 @@ local GUI = (function()
 
 		refreshProfileList()
 
-		-- ==================== PÁGINA MISC ====================
+		-- ========== PÁGINA MISC ==========
 		createSectionHeader(miscPage, "Misc")
 		local _, jumpToggle, jumpBg, jumpCircle, jumpBind = createToggle(miscPage, "Infinite Jump", "", State.infiniteJumpEnabled, State.keybinds.toggleJump)
 		local _, noClipToggle, noClipBg, noClipCircle, noClipBind = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled, nil)
 
-		-- ==================== TOGGLES FUNCTIONS ====================
+		-- ========== TOGGLES FUNCTIONS ==========
 		ToggleFunctions.autofarm = function(enabled)
 			State.autofarmEnabled = enabled
 			Utils.animateToggle(autofarmBg, autofarmCircle, enabled)
@@ -1784,7 +1771,7 @@ local GUI = (function()
 		end
 		fovToggle.MouseButton1Click:Connect(function() ToggleFunctions.fov(not State.fovEnabled) end)
 
-		-- ==================== SLIDERS ====================
+		-- ========== SLIDERS ==========
 		local function handleSlider(btn, fill, label, minV, maxV, precision, callback)
 			local dragging = false
 			btn.MouseButton1Down:Connect(function() dragging = true end)
@@ -1809,7 +1796,7 @@ local GUI = (function()
 		handleSlider(speedSlider, speedFill, speedValLabel, speedMin, speedMax, 1, function(v) State.speedValue = v end)
 		handleSlider(burstSlider, burstFill, burstLabel, burstMin, burstMax, 1, function(v) State.burstCount = v end)
 
-		-- ==================== BINDS ====================
+		-- ========== BINDS ==========
 		local function setupBind(bindBtn, keyName, callback)
 			if not bindBtn then return end
 			local function updateText()
@@ -1831,16 +1818,14 @@ local GUI = (function()
 			end)
 		end
 
-		-- Associar binds
 		setupBind(autofarmBind, "toggleAutofarm")
 		setupBind(autoAttackBind, "toggleAutoAttack")
 		setupBind(speedBind, "toggleSpeed")
 		setupBind(jumpBind, "toggleJump")
 		setupBind(espBind, "toggleESP")
 		setupBind(healthBarsBind, "toggleHealthBars")
-		-- toggleGUI é fixo (F1) não precisa de bind na UI, mas podemos adicionar se quiser
 
-		-- ==================== REFS ====================
+		-- ========== REFS ==========
 		toggleRefs = {
 			autofarmEnabled = { bg = autofarmBg, circle = autofarmCircle },
 			lockOnEnabled = { bg = lockOnBg, circle = lockOnCircle },
@@ -1855,7 +1840,7 @@ local GUI = (function()
 			fovEnabled = { bg = fovBg, circle = fovCircle },
 		}
 
-		-- ==================== CLEANUP ====================
+		-- ========== CLEANUP ==========
 		screenGui.Destroying:Connect(function()
 			Utils.cleanAllConnections()
 			ESP.clearAllESP()
@@ -1876,7 +1861,6 @@ local GUI = (function()
 				end
 				burstLabel.Text = tostring(State.burstCount)
 				burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin) / (burstMax - burstMin), 0, 1, 0)
-				-- Atualizar binds
 				for _, info in pairs(bindButtons) do
 					if info.update then info.update() end
 				end
@@ -1884,7 +1868,7 @@ local GUI = (function()
 		}
 	end
 
-	return { build = build, getToggleFunctions = function() return ToggleFunctions end }
+	return { build = build }
 end)()
 
 --//====================================================--
@@ -1896,15 +1880,12 @@ local Input = (function()
 	local player = Services.Players.LocalPlayer
 	local pendingBind = nil
 
-	-- Função para ser chamada pelo GUI quando um bind é iniciado
 	local function setPendingBind(info)
 		pendingBind = info
 	end
 
 	Services.UserInputService.InputBegan:Connect(function(input, processed)
 		if processed then return end
-
-		-- Verifica se há um bind pendente
 		if pendingBind then
 			if input.KeyCode ~= Enum.KeyCode.Unknown then
 				local key = input.KeyCode
@@ -1915,7 +1896,6 @@ local Input = (function()
 			return
 		end
 
-		-- Verifica os binds normais
 		local kb = State.keybinds
 		if input.KeyCode == kb.toggleGUI then
 			State.guiVisible = not State.guiVisible
@@ -1968,24 +1948,6 @@ local guiResult = GUI.build()
 local ToggleFunctions = guiResult.ToggleFunctions
 local mainFrame = guiResult.mainFrame
 GUI.refreshToggles = guiResult.refreshToggles
-
--- Conectar o sistema de bind pendente
-local function startBindCapture(bindBtn, keyName, callback)
-	Input.setPendingBind({ btn = bindBtn, cb = function(key)
-		callback(key)
-		bindBtn.Text = getKeyName(key)
-	end })
-	bindBtn.Text = "..."
-end
--- Sobrescrever a função de captura para usar o Input
-local oldStartBind = startBindCapture
-startBindCapture = function(bindBtn, keyName, callback)
-	Input.setPendingBind({ btn = bindBtn, cb = function(key)
-		callback(key)
-		bindBtn.Text = getKeyName(key)
-	end })
-	bindBtn.Text = "..."
-end
 
 Utils.updateCameraCache()
 Core.Services.RunService.RenderStepped:Connect(function()
