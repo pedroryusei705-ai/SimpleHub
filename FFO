@@ -6,6 +6,7 @@
 --//  Dual Autofarm Mode: Behind / Above NPC            --
 --//  Kill Aura (estilo deob) + Config System           --
 --//  Resizable & Draggable Window                      --
+--//  + Burst Count Configurable (1-10)                 --
 --//====================================================--
 
 local CyberHub = (function()
@@ -43,7 +44,7 @@ local Core = (function()
 
 	local State = {
 		autofarmEnabled    = false,
-		autofarmMode       = "Above",  -- ALTERADO: padrão agora é "Above"
+		autofarmMode       = "Behind",
 		autofarmDistance   = 8,
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
@@ -71,6 +72,8 @@ local Core = (function()
 		guiVisible         = true,
 		currentPage        = "combat",
 		isTeleporting      = false,
+		-- NOVO: burst count padrão
+		burstCount         = 3,
 	}
 
 	local Cache = {
@@ -491,6 +494,11 @@ local Combat = (function()
 					State.lockedTarget = target
 				end
 
+				-- Lê o burst count atual
+				local burst = State.burstCount or 3
+				-- Se burst for menor que 1, ajusta para 1
+				if burst < 1 then burst = 1 end
+
 				if target then
 					local npcRoot = target:FindFirstChild("HumanoidRootPart")
 					if npcRoot then
@@ -502,25 +510,22 @@ local Combat = (function()
 							attackPos = npcRoot.Position + Vector3.new(0, State.autofarmDistance, 0)
 						end
 						local cframe = CFrame.new(attackPos, npcRoot.Position)
-						remote:FireServer(1, weapon, cframe, true, weapon)
-						remote:FireServer(2, weapon, cframe, true, weapon)
-                        remote:FireServer(3, weapon, cframe, true, weapon)
-						remote:FireServer(4, weapon, cframe, true, weapon)
-                        remote:FireServer(1, weapon, cframe, true, weapon)
-					    remote:FireServer(2, weapon, cframe, true, weapon)
-                        remote:FireServer(3, weapon, cframe, true, weapon)
-				        remote:FireServer(4, weapon, cframe, true, weapon)
+						-- Repete o combo de 4 ataques 'burst' vezes
+						for _ = 1, burst do
+							remote:FireServer(1, weapon, cframe, true, weapon)
+							remote:FireServer(2, weapon, cframe, true, weapon)
+							remote:FireServer(3, weapon, cframe, true, weapon)
+							remote:FireServer(4, weapon, cframe, true, weapon)
+						end
 					end
 				else
 					local cframe = root.CFrame * CFrame.new(0, 0, -3)
-					remote:FireServer(1, weapon, cframe, true, weapon)
-					remote:FireServer(2, weapon, cframe, true, weapon)
-                    remote:FireServer(3, weapon, cframe, true, weapon)
-				    remote:FireServer(4, weapon, cframe, true, weapon)
-                    remote:FireServer(1, weapon, cframe, true, weapon)
-					remote:FireServer(2, weapon, cframe, true, weapon)
-                    remote:FireServer(3, weapon, cframe, true, weapon)
-				    remote:FireServer(4, weapon, cframe, true, weapon)
+					for _ = 1, burst do
+						remote:FireServer(1, weapon, cframe, true, weapon)
+						remote:FireServer(2, weapon, cframe, true, weapon)
+						remote:FireServer(3, weapon, cframe, true, weapon)
+						remote:FireServer(4, weapon, cframe, true, weapon)
+					end
 				end
 			end
 		end)
@@ -751,6 +756,7 @@ local ConfigManager = (function()
 			healthBarsEnabled=State.healthBarsEnabled,
 			playerESPEnabled=State.playerESPEnabled,
 			fovEnabled=State.fovEnabled,
+			burstCount=State.burstCount, -- NOVO
 		}
 		local path = folder.."/"..name..".json"
 		local success, err = pcall(writefile, path, Http:JSONEncode(data))
@@ -1214,13 +1220,15 @@ local GUI = (function()
 		updateModeVisuals()
 
 		local _, distSlider, distFill, distLabel, distMin, distMax = createSlider(combatPage, "Farm Distance", 1, 25, State.autofarmDistance)
+		-- NOVO SLIDER: Burst Count
+		local _, burstSlider, burstFill, burstLabel, burstMin, burstMax = createSlider(combatPage, "Burst Count", 1, 10, State.burstCount)
 		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Camera follows target", State.lockOnEnabled)
-		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Auto Attack (KP1)", "Kill Aura (estilo deob)", State.autoAttackEnabled)
+		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Auto Attack (F2)", "Kill Aura (estilo deob)", State.autoAttackEnabled)
 		
 		createSectionHeader(combatPage, "Movement")
-		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost (N)", "", State.speedEnabled)
+		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "", State.speedEnabled)
 		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
-		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump (Y)", "", State.infiniteJumpEnabled)
+		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "", State.infiniteJumpEnabled)
 
 		-- VISUAL PAGE
 		createSectionHeader(visualPage, "NPC Visuals")
@@ -1404,6 +1412,9 @@ local GUI = (function()
 			refreshProfileList(n)
 			updateModeVisuals()
 			for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+			-- Atualiza o valor do slider de burst também
+			burstLabel.Text = tostring(State.burstCount)
+			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
 		end)
 		overwriteBtn.MouseButton1Click:Connect(function()
 			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
@@ -1549,6 +1560,8 @@ local GUI = (function()
 
 		handleSlider(distSlider, distFill, distLabel, distMin, distMax, 10, function(v) State.autofarmDistance = v end)
 		handleSlider(speedSlider, speedFill, speedValLabel, speedMin, speedMax, 1, function(v) State.speedValue = v end)
+		-- Slider para Burst Count (valor inteiro)
+		handleSlider(burstSlider, burstFill, burstLabel, burstMin, burstMax, 1, function(v) State.burstCount = v end)
 
 		toggleRefs = {
 			autofarmEnabled={bg=autofarmBg, circle=autofarmCircle}, lockOnEnabled={bg=lockOnBg, circle=lockOnCircle},
@@ -1568,6 +1581,9 @@ local GUI = (function()
 
 		return { screenGui=screenGui, mainFrame=mainFrame, ToggleFunctions=ToggleFunctions, refreshToggles=function()
 			for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+			-- Atualiza o valor do burst na GUI
+			burstLabel.Text = tostring(State.burstCount)
+			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
 		end }
 	end
 
@@ -1592,33 +1608,19 @@ local Input = (function()
 
 		Services.UserInputService.InputBegan:Connect(function(input, processed)
 			if processed then return end
-
-			-- F5: Toggle GUI (minimizar)
-			if input.KeyCode == Enum.KeyCode.F5 then
+			if input.KeyCode == Enum.KeyCode.F1 then
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
-
-			-- Keypad1: Kill Aura (Auto Attack)
-			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
+			elseif input.KeyCode == Enum.KeyCode.F2 then
 				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
-
-			-- Keypad2: Autofarm
-			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
+			elseif input.KeyCode == Enum.KeyCode.F3 then
 				ToggleFunctions.autofarm(not State.autofarmEnabled)
-
-			-- N: Speed Boost
-			elseif input.KeyCode == Enum.KeyCode.N then
+			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
 				ToggleFunctions.speed(not State.speedEnabled)
-
-			-- Y: Infinite Jump
-			elseif input.KeyCode == Enum.KeyCode.Y then
+			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
 				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
-
-			-- Keypad0: ESP (mantido)
 			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
 				ToggleFunctions.esp(not State.espEnabled)
-
-			-- Keypad3: Health Bars (mantido)
 			elseif input.KeyCode == Enum.KeyCode.KeypadThree then
 				ToggleFunctions.healthBars(not State.healthBarsEnabled)
 			end
@@ -1690,14 +1692,13 @@ print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
+print("  🔥  Burst Count: ajustável (1-10)")
 print("═══════════════════════════════════════════════")
-print("  F5     - Toggle GUI (Minimizar)")
-print("  KP1    - Toggle Kill Aura")
-print("  KP2    - Toggle Autofarm (inicia em Above)")
-print("  N      - Toggle Speed Boost")
-print("  Y      - Toggle Infinite Jump")
-print("  KP0    - Toggle ESP")
-print("  KP3    - Toggle Health Bars")
+print("  F1  - Toggle GUI")
+print("  F2  - Toggle Kill Aura")
+print("  F3  - Toggle Autofarm")
+print("  KP1 - Toggle Speed")
+print("  KP2 - Toggle Infinite Jump")
 print("═══════════════════════════════════════════════")
 
 return {
