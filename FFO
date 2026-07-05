@@ -1607,24 +1607,31 @@ local Input = (function()
 		end)
 
 		Services.UserInputService.InputBegan:Connect(function(input, processed)
-			if processed then return end
-			if input.KeyCode == Enum.KeyCode.F1 then
-				State.guiVisible = not State.guiVisible
-				mainFrame.Visible = State.guiVisible
-			elseif input.KeyCode == Enum.KeyCode.F2 then
-				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
-			elseif input.KeyCode == Enum.KeyCode.F3 then
-				ToggleFunctions.autofarm(not State.autofarmEnabled)
-			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
-				ToggleFunctions.speed(not State.speedEnabled)
-			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
-				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
-			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
-				ToggleFunctions.esp(not State.espEnabled)
-			elseif input.KeyCode == Enum.KeyCode.KeypadThree then
-				ToggleFunctions.healthBars(not State.healthBarsEnabled)
-			end
-		end)
+	if processed then return end
+
+	if input.KeyCode == Enum.KeyCode.F1 then
+		State.guiVisible = not State.guiVisible
+		mainFrame.Visible = State.guiVisible
+
+	elseif input.KeyCode == Enum.KeyCode.KeypadOne then -- Kill Aura
+		ToggleFunctions.autoAttack(not State.autoAttackEnabled)
+
+	elseif input.KeyCode == Enum.KeyCode.KeypadTwo then -- Auto Farm
+		ToggleFunctions.autofarm(not State.autofarmEnabled)
+
+	elseif input.KeyCode == Enum.KeyCode.N then -- Speed
+		ToggleFunctions.speed(not State.speedEnabled)
+
+	elseif input.KeyCode == Enum.KeyCode.Y then -- Infinite Jump
+		ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
+
+	elseif input.KeyCode == Enum.KeyCode.KeypadZero then
+		ToggleFunctions.esp(not State.espEnabled)
+
+	elseif input.KeyCode == Enum.KeyCode.KeypadThree then
+		ToggleFunctions.healthBars(not State.healthBarsEnabled)
+	end
+end)
 
 		player.CharacterAdded:Connect(function()
 			Utils.invalidateCharCache()
