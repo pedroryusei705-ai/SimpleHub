@@ -852,29 +852,25 @@ local GUI = (function()
 
 	local screenGui, mainFrame
 	local toggleRefs = {}
-	local bindButtons = {}  -- para atualizar textos dos binds
+	local bindButtons = {}
 	local resizeActive = false
 	local resizeStartPos, resizeStartSize
 
 	-- Cores do tema (roxo/preto/transparente)
-	local bgMain = Color3.fromRGB(10, 5, 18)        -- quase preto com tom roxo
-	local bgPanel = Color3.fromRGB(25, 15, 40)      -- roxo escuro translúcido
-	local bgAccent = Color3.fromRGB(110, 50, 200)   -- roxo vibrante
-	local bgAccentLight = Color3.fromRGB(160, 100, 230)
-	local textLight = Color3.fromRGB(230, 220, 240)
-	local textDim = Color3.fromRGB(170, 160, 190)
-	local borderColor = Color3.fromRGB(80, 50, 120)
+	local bgMain = Color3.fromRGB(8, 4, 16)          -- quase preto com tom roxo
+	local bgPanel = Color3.fromRGB(25, 15, 45)        -- roxo escuro translúcido
+	local bgAccent = Color3.fromRGB(120, 60, 220)     -- roxo vibrante
+	local bgAccentLight = Color3.fromRGB(170, 110, 240)
+	local textLight = Color3.fromRGB(235, 225, 245)
+	local textDim = Color3.fromRGB(175, 165, 195)
+	local borderColor = Color3.fromRGB(80, 50, 130)
 
-	local function makeTransparent(frame, alpha)
-		frame.BackgroundTransparency = alpha or 0.85
-	end
-
-	-- Funções auxiliares de criação (estilo translúcido)
+	-- Funções auxiliares de criação (design translúcido)
 	local function createSectionHeader(parent, text)
 		local frame = Instance.new("Frame")
-		frame.Size = Cache.UDim2_new(1, 0, 0, 30)
+		frame.Size = Cache.UDim2_new(1, 0, 0, 28)
 		frame.BackgroundColor3 = bgAccent
-		frame.BackgroundTransparency = 0.7
+		frame.BackgroundTransparency = 0.8
 		frame.BorderSizePixel = 0
 		frame.Parent = parent
 
@@ -896,7 +892,7 @@ local GUI = (function()
 		local container = Instance.new("Frame")
 		container.Size = Cache.UDim2_new(1, 0, 0, descText and 52 or 40)
 		container.BackgroundColor3 = bgPanel
-		container.BackgroundTransparency = 0.75
+		container.BackgroundTransparency = 0.8
 		container.BorderSizePixel = 0
 		container.Parent = parent
 
@@ -932,7 +928,7 @@ local GUI = (function()
 		local toggleBg = Instance.new("Frame")
 		toggleBg.Size = Cache.UDim2_new(0, 38, 0, 20)
 		toggleBg.Position = Cache.UDim2_new(1, -45, 0, descText and 14 or 10)
-		toggleBg.BackgroundColor3 = defaultState and bgAccent or Cache.Color3_fromRGB(50, 50, 70)
+		toggleBg.BackgroundColor3 = defaultState and bgAccent or Cache.Color3_fromRGB(50, 50, 75)
 		toggleBg.BackgroundTransparency = 0.6
 		toggleBg.BorderSizePixel = 0
 		toggleBg.Parent = container
@@ -945,7 +941,7 @@ local GUI = (function()
 		toggleCircle.Size = Cache.UDim2_new(0, 16, 0, 16)
 		toggleCircle.Position = defaultState and Cache.UDim2_new(1, -18, 0.5, -8) or Cache.UDim2_new(0, 2, 0.5, -8)
 		toggleCircle.BackgroundColor3 = Cache.Color3_white
-		toggleCircle.BackgroundTransparency = 0.1
+		toggleCircle.BackgroundTransparency = 0.2
 		toggleCircle.BorderSizePixel = 0
 		toggleCircle.Parent = toggleBg
 
@@ -960,21 +956,24 @@ local GUI = (function()
 		toggleBtn.Parent = toggleBg
 
 		-- Bind button (mostra a tecla)
-		local bindBtn = Instance.new("TextButton")
-		bindBtn.Size = Cache.UDim2_new(0, 60, 0, 22)
-		bindBtn.Position = Cache.UDim2_new(1, -115, 0, descText and 14 or 9)
-		bindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 60)
-		bindBtn.BackgroundTransparency = 0.6
-		bindBtn.Text = bindKey and tostring(bindKey):gsub("Enum.KeyCode.", "") or "?"
-		bindBtn.Font = Enum.Font.GothamBold
-		bindBtn.TextSize = 10
-		bindBtn.TextColor3 = textLight
-		bindBtn.BorderSizePixel = 0
-		bindBtn.Parent = container
+		local bindBtn = nil
+		if bindKey then
+			bindBtn = Instance.new("TextButton")
+			bindBtn.Size = Cache.UDim2_new(0, 65, 0, 22)
+			bindBtn.Position = Cache.UDim2_new(1, -120, 0, descText and 14 or 9)
+			bindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 65)
+			bindBtn.BackgroundTransparency = 0.6
+			bindBtn.Text = tostring(bindKey):gsub("Enum.KeyCode.", "")
+			bindBtn.Font = Enum.Font.GothamBold
+			bindBtn.TextSize = 10
+			bindBtn.TextColor3 = textLight
+			bindBtn.BorderSizePixel = 0
+			bindBtn.Parent = container
 
-		local bindCorner = Instance.new("UICorner")
-		bindCorner.CornerRadius = UDim.new(0, 4)
-		bindCorner.Parent = bindBtn
+			local bindCorner = Instance.new("UICorner")
+			bindCorner.CornerRadius = UDim.new(0, 4)
+			bindCorner.Parent = bindBtn
+		end
 
 		return container, toggleBtn, toggleBg, toggleCircle, bindBtn
 	end
@@ -983,7 +982,7 @@ local GUI = (function()
 		local container = Instance.new("Frame")
 		container.Size = Cache.UDim2_new(1, 0, 0, 48)
 		container.BackgroundColor3 = bgPanel
-		container.BackgroundTransparency = 0.75
+		container.BackgroundTransparency = 0.8
 		container.BorderSizePixel = 0
 		container.Parent = parent
 
@@ -1016,7 +1015,7 @@ local GUI = (function()
 		local sliderBg = Instance.new("Frame")
 		sliderBg.Size = Cache.UDim2_new(1, -20, 0, 4)
 		sliderBg.Position = Cache.UDim2_new(0, 10, 1, -10)
-		sliderBg.BackgroundColor3 = Cache.Color3_fromRGB(50, 40, 70)
+		sliderBg.BackgroundColor3 = Cache.Color3_fromRGB(50, 40, 75)
 		sliderBg.BackgroundTransparency = 0.5
 		sliderBg.BorderSizePixel = 0
 		sliderBg.Parent = container
@@ -1072,7 +1071,7 @@ local GUI = (function()
 		page.BackgroundTransparency = 1
 		page.BorderSizePixel = 0
 		page.ScrollBarThickness = 3
-		page.ScrollBarImageColor3 = Cache.Color3_fromRGB(80, 60, 120)
+		page.ScrollBarImageColor3 = Cache.Color3_fromRGB(80, 60, 130)
 		page.CanvasSize = Cache.UDim2_new(0, 0, 0, 0)
 		page.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		page.Visible = false
@@ -1095,12 +1094,12 @@ local GUI = (function()
 	local function createSidebarBtn(parent, text, name)
 		local btn = Instance.new("TextButton")
 		btn.Name = name
-		btn.Size = Cache.UDim2_new(0, 42, 0, 42)
-		btn.BackgroundColor3 = Cache.Color3_fromRGB(20, 15, 30)
-		btn.BackgroundTransparency = 0.7
+		btn.Size = Cache.UDim2_new(0, 44, 0, 44)
+		btn.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
+		btn.BackgroundTransparency = 0.8
 		btn.Text = text
 		btn.Font = Enum.Font.GothamBold
-		btn.TextSize = 14
+		btn.TextSize = 13
 		btn.TextColor3 = textDim
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
@@ -1114,7 +1113,7 @@ local GUI = (function()
 	end
 
 	local ToggleFunctions = {}
-	local pendingBind = nil  -- para capturar tecla
+	local pendingBind = nil
 
 	local function startBindCapture(bindBtn, keyName, callback)
 		pendingBind = { btn = bindBtn, key = keyName, cb = callback }
@@ -1143,7 +1142,7 @@ local GUI = (function()
 		mainFrame.Size = UDim2.new(0, CONFIG.WINDOW_DEFAULT_SIZE.X, 0, CONFIG.WINDOW_DEFAULT_SIZE.Y)
 		mainFrame.Position = UDim2.new(0, 20, 0.5, -CONFIG.WINDOW_DEFAULT_SIZE.Y / 2)
 		mainFrame.BackgroundColor3 = bgMain
-		mainFrame.BackgroundTransparency = 0.85
+		mainFrame.BackgroundTransparency = 0.88
 		mainFrame.BorderSizePixel = 0
 		mainFrame.Active = true
 		mainFrame.Draggable = true
@@ -1156,14 +1155,14 @@ local GUI = (function()
 		local border = Instance.new("UIStroke")
 		border.Color = borderColor
 		border.Thickness = 1
-		border.Transparency = 0.5
+		border.Transparency = 0.4
 		border.Parent = mainFrame
 
 		-- Cabeçalho
 		local header = Instance.new("Frame")
 		header.Size = Cache.UDim2_new(1, 0, 0, 40)
 		header.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
-		header.BackgroundTransparency = 0.8
+		header.BackgroundTransparency = 0.85
 		header.BorderSizePixel = 0
 		header.Parent = mainFrame
 
@@ -1175,7 +1174,7 @@ local GUI = (function()
 		title.Size = Cache.UDim2_new(1, -70, 1, 0)
 		title.Position = Cache.UDim2_new(0, 12, 0, 0)
 		title.BackgroundTransparency = 1
-		title.Text = "CYBER HUB v4.7"
+		title.Text = "Cyber Hub v4.7"
 		title.Font = Enum.Font.GothamBold
 		title.TextSize = 16
 		title.TextColor3 = Cache.Color3_white
@@ -1185,9 +1184,9 @@ local GUI = (function()
 		local closeBtn = Instance.new("TextButton")
 		closeBtn.Size = Cache.UDim2_new(0, 28, 0, 28)
 		closeBtn.Position = Cache.UDim2_new(1, -34, 0.5, -14)
-		closeBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 60)
+		closeBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 65)
 		closeBtn.BackgroundTransparency = 0.6
-		closeBtn.Text = "✕"
+		closeBtn.Text = "X"
 		closeBtn.Font = Enum.Font.GothamBold
 		closeBtn.TextSize = 16
 		closeBtn.TextColor3 = textLight
@@ -1204,10 +1203,10 @@ local GUI = (function()
 
 		-- Sidebar
 		local sidebar = Instance.new("Frame")
-		sidebar.Size = Cache.UDim2_new(0, 52, 1, -46)
+		sidebar.Size = Cache.UDim2_new(0, 54, 1, -46)
 		sidebar.Position = Cache.UDim2_new(0, 4, 0, 42)
 		sidebar.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
-		sidebar.BackgroundTransparency = 0.8
+		sidebar.BackgroundTransparency = 0.85
 		sidebar.BorderSizePixel = 0
 		sidebar.Parent = mainFrame
 
@@ -1225,17 +1224,17 @@ local GUI = (function()
 		sidebarPadding.PaddingBottom = UDim.new(0, 8)
 		sidebarPadding.Parent = sidebar
 
-		-- Botões da sidebar (sem emojis, apenas texto curto)
-		local combatBtn = createSidebarBtn(sidebar, "⚔", "CombatBtn")
-		local visualBtn = createSidebarBtn(sidebar, "👁", "VisualBtn")
-		local teleportBtn = createSidebarBtn(sidebar, "📍", "TeleportBtn")
-		local configBtn = createSidebarBtn(sidebar, "⚙", "ConfigBtn")
-		local miscBtn = createSidebarBtn(sidebar, "🔧", "MiscBtn")
+		-- Botões da sidebar (texto curto sem emojis)
+		local combatBtn = createSidebarBtn(sidebar, "CMB", "CombatBtn")
+		local visualBtn = createSidebarBtn(sidebar, "VIS", "VisualBtn")
+		local teleportBtn = createSidebarBtn(sidebar, "TLP", "TeleportBtn")
+		local configBtn = createSidebarBtn(sidebar, "CFG", "ConfigBtn")
+		local miscBtn = createSidebarBtn(sidebar, "MSC", "MiscBtn")
 
 		-- Área de conteúdo
 		local contentArea = Instance.new("Frame")
-		contentArea.Size = Cache.UDim2_new(1, -66, 1, -46)
-		contentArea.Position = Cache.UDim2_new(0, 60, 0, 42)
+		contentArea.Size = Cache.UDim2_new(1, -68, 1, -46)
+		contentArea.Position = Cache.UDim2_new(0, 62, 0, 42)
 		contentArea.BackgroundTransparency = 1
 		contentArea.Parent = mainFrame
 
@@ -1246,15 +1245,12 @@ local GUI = (function()
 		local configPage = createPage("ConfigPage", contentArea)
 		local miscPage = createPage("MiscPage", contentArea)
 
-		-- Dentro de cada página, teremos sub-abas (usando frames que alternam visibilidade)
-		-- Para simplificar, usaremos um sistema de abas com botões e painéis
-
-		-- Função para criar abas internas
+		-- Função para criar abas internas (sub-tabs)
 		local function createSubTabs(parent, tabNames, tabPanels)
 			local tabContainer = Instance.new("Frame")
 			tabContainer.Size = Cache.UDim2_new(1, 0, 0, 36)
 			tabContainer.BackgroundColor3 = Cache.Color3_fromRGB(20, 12, 35)
-			tabContainer.BackgroundTransparency = 0.7
+			tabContainer.BackgroundTransparency = 0.8
 			tabContainer.BorderSizePixel = 0
 			tabContainer.Parent = parent
 
@@ -1274,7 +1270,7 @@ local GUI = (function()
 			for i, name in ipairs(tabNames) do
 				local btn = Instance.new("TextButton")
 				btn.Size = Cache.UDim2_new(0, 100, 0, 28)
-				btn.BackgroundColor3 = (i == 1) and bgAccent or Cache.Color3_fromRGB(40, 30, 60)
+				btn.BackgroundColor3 = (i == 1) and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
 				btn.BackgroundTransparency = 0.6
 				btn.Text = name
 				btn.Font = Enum.Font.GothamBold
@@ -1290,7 +1286,7 @@ local GUI = (function()
 
 				btn.MouseButton1Click:Connect(function()
 					for j, b in ipairs(buttons) do
-						b.BackgroundColor3 = (j == i) and bgAccent or Cache.Color3_fromRGB(40, 30, 60)
+						b.BackgroundColor3 = (j == i) and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
 					end
 					for j, panel in ipairs(tabPanels) do
 						panel.Visible = (j == i)
@@ -1335,6 +1331,8 @@ local GUI = (function()
 			padding.Parent = panel
 		end
 
+		createSubTabs(combatPage, combatTabNames, combatPanels)
+
 		local autofarmPanel = combatPanels[1]
 		local killAuraPanel = combatPanels[2]
 		local farmConfigPanel = combatPanels[3]
@@ -1344,7 +1342,7 @@ local GUI = (function()
 		local _, lockOnToggle, lockOnBg, lockOnCircle, lockOnBind = createToggle(autofarmPanel, "Lock On", "Camera follows target", State.lockOnEnabled, nil)
 
 		-- Kill Aura panel
-		local _, autoAttackToggle, autoAttackBg, autoAttackCircle, autoAttackBind = createToggle(killAuraPanel, "Auto Attack", "Kill Aura (estilo deob)", State.autoAttackEnabled, State.keybinds.toggleAutoAttack)
+		local _, autoAttackToggle, autoAttackBg, autoAttackCircle, autoAttackBind = createToggle(killAuraPanel, "Auto Attack", "Kill Aura", State.autoAttackEnabled, State.keybinds.toggleAutoAttack)
 		local _, speedToggle, speedBg, speedCircle, speedBind = createToggle(killAuraPanel, "Speed Boost", "", State.speedEnabled, State.keybinds.toggleSpeed)
 		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(killAuraPanel, "Speed Value", 50, 300, State.speedValue)
 
@@ -1352,7 +1350,7 @@ local GUI = (function()
 		local modeContainer = Instance.new("Frame")
 		modeContainer.Size = Cache.UDim2_new(1, 0, 0, 56)
 		modeContainer.BackgroundColor3 = bgPanel
-		modeContainer.BackgroundTransparency = 0.75
+		modeContainer.BackgroundTransparency = 0.8
 		modeContainer.BorderSizePixel = 0
 		modeContainer.Parent = farmConfigPanel
 
@@ -1384,7 +1382,7 @@ local GUI = (function()
 
 		local behindBtn = Instance.new("TextButton")
 		behindBtn.Size = Cache.UDim2_new(0, 130, 0, 26)
-		behindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 60)
+		behindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 65)
 		behindBtn.BackgroundTransparency = 0.6
 		behindBtn.Text = "Behind"
 		behindBtn.Font = Enum.Font.GothamBold
@@ -1404,9 +1402,9 @@ local GUI = (function()
 
 		local function updateModeVisuals()
 			local isBehind = (State.autofarmMode == "Behind")
-			behindBtn.BackgroundColor3 = isBehind and bgAccent or Cache.Color3_fromRGB(40, 30, 60)
+			behindBtn.BackgroundColor3 = isBehind and bgAccent or Cache.Color3_fromRGB(40, 30, 65)
 			behindBtn.TextColor3 = isBehind and Cache.Color3_white or textDim
-			aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40, 30, 60) or bgAccent
+			aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40, 30, 65) or bgAccent
 			aboveBtn.TextColor3 = isBehind and textDim or Cache.Color3_white
 		end
 
@@ -1432,7 +1430,7 @@ local GUI = (function()
 		local tpInfo = Instance.new("Frame")
 		tpInfo.Size = Cache.UDim2_new(1, 0, 0, 50)
 		tpInfo.BackgroundColor3 = bgAccent
-		tpInfo.BackgroundTransparency = 0.8
+		tpInfo.BackgroundTransparency = 0.85
 		tpInfo.BorderSizePixel = 0
 		tpInfo.Parent = teleportPage
 
@@ -1457,7 +1455,7 @@ local GUI = (function()
 		local npcListFrame = Instance.new("ScrollingFrame")
 		npcListFrame.Size = Cache.UDim2_new(1, 0, 0, 200)
 		npcListFrame.BackgroundColor3 = bgPanel
-		npcListFrame.BackgroundTransparency = 0.75
+		npcListFrame.BackgroundTransparency = 0.8
 		npcListFrame.BorderSizePixel = 0
 		npcListFrame.CanvasSize = Cache.UDim2_new(0, 0, 0, 0)
 		npcListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -1477,7 +1475,7 @@ local GUI = (function()
 			for _, name in ipairs(Teleport.getNPCList()) do
 				local btn = Instance.new("TextButton")
 				btn.Size = Cache.UDim2_new(1, -10, 0, 28)
-				btn.BackgroundColor3 = Cache.Color3_fromRGB(30, 20, 50)
+				btn.BackgroundColor3 = Cache.Color3_fromRGB(30, 20, 55)
 				btn.BackgroundTransparency = 0.6
 				btn.Text = "  " .. name
 				btn.Font = Enum.Font.Gotham
@@ -1495,7 +1493,7 @@ local GUI = (function()
 					Teleport.safeTeleportToNPC(name)
 					btn.BackgroundColor3 = Cache.Color3_fromRGB(80, 200, 120)
 					task.wait(0.3)
-					btn.BackgroundColor3 = Cache.Color3_fromRGB(30, 20, 50)
+					btn.BackgroundColor3 = Cache.Color3_fromRGB(30, 20, 55)
 				end)
 			end
 			npcListFrame.CanvasSize = Cache.UDim2_new(0, 0, 0, #Teleport.getNPCList() * 32 + 10)
@@ -1509,7 +1507,7 @@ local GUI = (function()
 		local configInfo = Instance.new("Frame")
 		configInfo.Size = Cache.UDim2_new(1, 0, 0, 45)
 		configInfo.BackgroundColor3 = bgAccent
-		configInfo.BackgroundTransparency = 0.8
+		configInfo.BackgroundTransparency = 0.85
 		configInfo.BorderSizePixel = 0
 		configInfo.Parent = configPage
 
@@ -1521,7 +1519,7 @@ local GUI = (function()
 		configLabel.Size = Cache.UDim2_new(1, -20, 1, 0)
 		configLabel.Position = Cache.UDim2_new(0, 10, 0, 0)
 		configLabel.BackgroundTransparency = 1
-		configLabel.Text = "Save/Load all hub settings\nProfiles stored in CyberHubConfigs folder"
+		configLabel.Text = "Save / Load all hub settings\nProfiles stored in CyberHubConfigs folder"
 		configLabel.Font = Enum.Font.Gotham
 		configLabel.TextSize = 10
 		configLabel.TextColor3 = Cache.Color3_white
@@ -1532,7 +1530,7 @@ local GUI = (function()
 		local nameContainer = Instance.new("Frame")
 		nameContainer.Size = Cache.UDim2_new(1, 0, 0, 40)
 		nameContainer.BackgroundColor3 = bgPanel
-		nameContainer.BackgroundTransparency = 0.75
+		nameContainer.BackgroundTransparency = 0.8
 		nameContainer.BorderSizePixel = 0
 		nameContainer.Parent = configPage
 
@@ -1554,7 +1552,7 @@ local GUI = (function()
 		local nameBox = Instance.new("TextBox")
 		nameBox.Size = Cache.UDim2_new(0, 160, 0, 28)
 		nameBox.Position = Cache.UDim2_new(0, 75, 0.5, -14)
-		nameBox.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 60)
+		nameBox.BackgroundColor3 = Cache.Color3_fromRGB(40, 30, 65)
 		nameBox.BackgroundTransparency = 0.6
 		nameBox.Text = "default"
 		nameBox.Font = Enum.Font.Gotham
@@ -1593,7 +1591,7 @@ local GUI = (function()
 		local profileList = Instance.new("ScrollingFrame")
 		profileList.Size = Cache.UDim2_new(1, 0, 0, 130)
 		profileList.BackgroundColor3 = bgPanel
-		profileList.BackgroundTransparency = 0.75
+		profileList.BackgroundTransparency = 0.8
 		profileList.BorderSizePixel = 0
 		profileList.CanvasSize = Cache.UDim2_new(0, 0, 0, 0)
 		profileList.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -1614,7 +1612,7 @@ local GUI = (function()
 			for _, name in ipairs(names) do
 				local btn = Instance.new("TextButton")
 				btn.Size = Cache.UDim2_new(1, -10, 0, 26)
-				btn.BackgroundColor3 = (selectedName == name) and bgAccent or Cache.Color3_fromRGB(30, 20, 50)
+				btn.BackgroundColor3 = (selectedName == name) and bgAccent or Cache.Color3_fromRGB(30, 20, 55)
 				btn.BackgroundTransparency = 0.6
 				btn.Text = "  " .. name
 				btn.Font = Enum.Font.Gotham
@@ -1898,6 +1896,11 @@ local Input = (function()
 	local player = Services.Players.LocalPlayer
 	local pendingBind = nil
 
+	-- Função para ser chamada pelo GUI quando um bind é iniciado
+	local function setPendingBind(info)
+		pendingBind = info
+	end
+
 	Services.UserInputService.InputBegan:Connect(function(input, processed)
 		if processed then return end
 
@@ -1952,12 +1955,7 @@ local Input = (function()
 		end
 	end)
 
-	-- Exporta a função para capturar bind
-	return {
-		setPendingBind = function(info)
-			pendingBind = info
-		end
-	}
+	return { setPendingBind = setPendingBind }
 end)()
 
 --//====================================================--
@@ -1973,7 +1971,10 @@ GUI.refreshToggles = guiResult.refreshToggles
 
 -- Conectar o sistema de bind pendente
 local function startBindCapture(bindBtn, keyName, callback)
-	pendingBind = { btn = bindBtn, key = keyName, cb = callback }
+	Input.setPendingBind({ btn = bindBtn, cb = function(key)
+		callback(key)
+		bindBtn.Text = getKeyName(key)
+	end })
 	bindBtn.Text = "..."
 end
 -- Sobrescrever a função de captura para usar o Input
@@ -2010,16 +2011,16 @@ ConfigManager.loadAutoload()
 task.wait(0.5)
 if GUI.refreshToggles then GUI.refreshToggles() end
 
-print("═══════════════════════════════════════════════")
+print("============================================")
 print("        CYBER HUB - FFRE EDITION V4.7         ")
-print("═══════════════════════════════════════════════")
+print("============================================")
 print("  Combat: Auto Farm | Lock On | Kill Aura")
 print("  Movement: Speed | Infinite Jump | No Clip")
 print("  Visual: ESP | Tracers | Health Bars")
 print("  Teleport: Ultra Smooth (Anti-Kick)")
 print("  Config: Save/Load/Overwrite profiles")
 print("  Binds: configuráveis via UI")
-print("═══════════════════════════════════════════════")
+print("============================================")
 
 return {
 	Core = Core,
