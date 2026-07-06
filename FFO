@@ -38,13 +38,13 @@ local Core = (function()
 		VISUAL_NPC_FOLDER     = workspace:WaitForChild("Alive"),
 		TELEPORT_NPC_FOLDER   = workspace:WaitForChild("LiveNPCS"),
 		CONFIG_FOLDER         = "CyberHubConfigs",
-		WINDOW_MIN_SIZE       = Vector2.new(400, 500),   -- Aumentado
-		WINDOW_DEFAULT_SIZE   = Vector2.new(600, 700),   -- Aumentado
+		WINDOW_MIN_SIZE       = Vector2.new(400, 500),
+		WINDOW_DEFAULT_SIZE   = Vector2.new(600, 700),
 	}
 
 	local State = {
 		autofarmEnabled    = false,
-		autofarmMode       = "Behind",
+		autofarmMode       = "Above",  -- ALTERADO: agora começa em "Above"
 		autofarmDistance   = 8,
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
@@ -172,7 +172,8 @@ local NPCCache = (function()
 			if npc:IsA("Model") and npc ~= player.Character then
 				local hum = npc:FindFirstChild("Humanoid")
 				local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-				if hum and npcRoot and hum.Health > 0 then
+				-- ALTERADO: agora filtra NPCs com vida > 1 (ignora vida 1 ou 0)
+				if hum and npcRoot and hum.Health > 1 then
 					local dist = (root.Position - npcRoot.Position).Magnitude
 					if dist <= CONFIG.MAX_DISTANCE then
 						table.insert(State.npcCache, { model=npc, root=npcRoot, humanoid=hum, distance=dist })
@@ -196,7 +197,8 @@ local NPCCache = (function()
 		if not npc or not npc.Parent then return false end
 		local hum = npc:FindFirstChild("Humanoid")
 		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-		if not hum or not npcRoot or hum.Health <= 0 then return false end
+		-- ALTERADO: agora considera inválido se vida <= 1
+		if not hum or not npcRoot or hum.Health <= 1 then return false end
 		local root = Utils.getCharComponents()
 		if not root then return false end
 		return (root.Position - npcRoot.Position).Magnitude <= Core.CONFIG.MAX_DISTANCE
@@ -472,7 +474,7 @@ local Combat = (function()
 
 	local autoAttackThread = nil
 	local autoAttackRunning = false
-	local attackCooldown = 0.12 -- padrão
+	local attackCooldown = 0.12
 
 	local function startAutoAttack()
 		if autoAttackThread then return end
@@ -560,13 +562,28 @@ local Combat = (function()
 		if not State.autofarmEnabled then return end
 		local root = Utils.getCharComponents()
 		if not root then return end
-		if not NPCCache.isValid(State.lockedNPC) then State.lockedNPC = NPCCache.findClosest() end
+
+		-- Verifica se o NPC atual é válido (vida > 1)
+		if not NPCCache.isValid(State.lockedNPC) then
+			State.lockedNPC = NPCCache.findClosest()
+			-- Validação dupla para garantir que o novo alvo também é válido
+			if not NPCCache.isValid(State.lockedNPC) then
+				State.lockedNPC = nil
+				return
+			end
+		end
+
 		local npc = State.lockedNPC
 		if not npc then return end
 		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-		if not npcRoot then State.lockedNPC = nil return end
+		if not npcRoot then
+			State.lockedNPC = nil
+			return
+		end
+
 		root.AssemblyLinearVelocity = Cache.Vector3_zero
 		root.AssemblyAngularVelocity = Cache.Vector3_zero
+
 		if State.autofarmMode == "Above" then
 			local targetPos = npcRoot.Position + Cache.Vector3_new(0, State.autofarmDistance, 0)
 			root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90),0,0)
@@ -1427,7 +1444,6 @@ local GUI = (function()
 		createSectionHeader(miscPage, "Misc")
 		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
 
-		-- Adiciona seção de Keybinds na aba Misc
 		createSectionHeader(miscPage, "Keybinds")
 		local bindsContainer = Instance.new("Frame")
 		bindsContainer.Size = Cache.UDim2_new(1,0,0,100)
@@ -1629,16 +1645,16 @@ local Input = (function()
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
 
-			elseif input.KeyCode == Enum.KeyCode.KeypadOne then -- Kill Aura
+			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
 				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then -- Auto Farm
+			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
 				ToggleFunctions.autofarm(not State.autofarmEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.N then -- Speed
+			elseif input.KeyCode == Enum.KeyCode.N then
 				ToggleFunctions.speed(not State.speedEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.Y then -- Infinite Jump
+			elseif input.KeyCode == Enum.KeyCode.Y then
 				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
 
 			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
@@ -1678,13 +1694,11 @@ GUI.refreshToggles = guiResult.refreshToggles
 
 Input.init(mainFrame, ToggleFunctions)
 
--- Atualização de câmera a cada frame (cache)
 Utils.updateCameraCache()
 Core.Services.RunService.RenderStepped:Connect(function()
 	Utils.updateCameraCache()
 end)
 
--- Atualizações visuais otimizadas:
 local visualUpdateInterval = 0.1
 local lastVisualUpdate = 0
 Core.Services.RunService.Heartbeat:Connect(function(delta)
@@ -1714,6 +1728,7 @@ print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
 print("  🔥  Burst Count: ajustável (1-10)")
+print("  🔄  Auto-switch target when health ≤ 1")
 print("═══════════════════════════════════════════════")
 print("  F1   - Toggle GUI")
 print("  KP1  - Kill Aura (Auto Attack)")
