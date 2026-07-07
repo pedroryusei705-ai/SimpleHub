@@ -1458,49 +1458,13 @@ Keypad3 - Health Bars]]
 		bindsText.Parent = bindsContainer
 
 		-- ===================================================== --
-		--              DESERT RAID PAGE (MELHORADA)             --
+		--              DESERT RAID PAGE (REFEITA)               --
 		-- ===================================================== --
 		createSectionHeader(desertPage, "Desert Raid")
 
-		-- Função para encontrar ClickDetectors recursivamente em DesertDesert
-		local function findClickDetectorsRecursive()
-			local results = {}
-			local desert = workspace:FindFirstChild("DesertDesert")
-			if not desert then return results end
-
-			local function search(obj, path)
-				for _, child in ipairs(obj:GetChildren()) do
-					local newPath = path .. "." .. child.Name
-					if child:IsA("ClickDetector") then
-						table.insert(results, { detector = child, path = newPath, parent = obj })
-					else
-						search(child, newPath)
-					end
-				end
-			end
-			search(desert, "DesertDesert")
-			return results
-		end
-
-		-- Função para encontrar a BossSpawnPart do Wendigo
-		local function findWendigoSpawn()
-			local wendigo = workspace:FindFirstChild("DesertDesert") and workspace.DesertDesert:FindFirstChild("Wendigo")
-			if wendigo then
-				local spawn = wendigo:FindFirstChild("BossSpawnPart")
-				if spawn and spawn:IsA("BasePart") then return spawn end
-				-- busca recursiva caso esteja mais fundo
-				for _, child in ipairs(wendigo:GetDescendants()) do
-					if child.Name == "BossSpawnPart" and child:IsA("BasePart") then
-						return child
-					end
-				end
-			end
-			return nil
-		end
-
-		-- Container para botões (vertical)
+		-- Container para os botões de ClickDetector (vertical)
 		local clickContainer = Instance.new("Frame")
-		clickContainer.Size = Cache.UDim2_new(1,0,0,140) -- altura para 3 botões
+		clickContainer.Size = Cache.UDim2_new(1,0,0,140)
 		clickContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		clickContainer.BorderSizePixel = 0
 		clickContainer.Parent = desertPage
@@ -1516,46 +1480,16 @@ Keypad3 - Health Bars]]
 		local pedestalBtn = createButton(clickContainer, "🔮 Ativar Pedestal", Cache.Color3_fromRGB(200,180,80))
 		pedestalBtn.Size = Cache.UDim2_new(0.9,0,0,30)
 		pedestalBtn.MouseButton1Click:Connect(function()
-			-- Busca por um ClickDetector cujo pai seja "Pedestal"
-			local detectors = findClickDetectorsRecursive()
-			local found = false
-			for _, info in ipairs(detectors) do
-				if info.parent.Name == "Pedestal" then
-					fireclickdetector(info.detector)
-					found = true
-					pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
-					task.wait(0.3)
-					pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,180,80)
-					break
-				end
-			end
-			if not found then
+			local cd = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Pedestal") and workspace.DesertedDesert.Pedestal:FindFirstChild("ClickDetector")
+			if cd then
+				fireclickdetector(cd, 0, 0)
+				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				task.wait(0.3)
+				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,180,80)
+			else
 				pedestalBtn.Text = "❌ Não encontrado"
 				task.wait(1)
 				pedestalBtn.Text = "🔮 Ativar Pedestal"
-			end
-		end)
-
-		-- Botão Dragão
-		local dragonBtn = createButton(clickContainer, "🐉 Ativar Dragão", Cache.Color3_fromRGB(200,80,80))
-		dragonBtn.Size = Cache.UDim2_new(0.9,0,0,30)
-		dragonBtn.MouseButton1Click:Connect(function()
-			local detectors = findClickDetectorsRecursive()
-			local found = false
-			for _, info in ipairs(detectors) do
-				if info.parent.Name == "ClickPart" then
-					fireclickdetector(info.detector)
-					found = true
-					dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
-					task.wait(0.3)
-					dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,80,80)
-					break
-				end
-			end
-			if not found then
-				dragonBtn.Text = "❌ Não encontrado"
-				task.wait(1)
-				dragonBtn.Text = "🐉 Ativar Dragão"
 			end
 		end)
 
@@ -1563,22 +1497,33 @@ Keypad3 - Health Bars]]
 		local vendingBtn = createButton(clickContainer, "🏪 Ativar Vending Machine", Cache.Color3_fromRGB(80,180,200))
 		vendingBtn.Size = Cache.UDim2_new(0.9,0,0,30)
 		vendingBtn.MouseButton1Click:Connect(function()
-			local detectors = findClickDetectorsRecursive()
-			local found = false
-			for _, info in ipairs(detectors) do
-				if info.parent.Name == "VendingMachineClickPart" then
-					fireclickdetector(info.detector)
-					found = true
-					vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
-					task.wait(0.3)
-					vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,180,200)
-					break
-				end
-			end
-			if not found then
+			local cd = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("VendingMachineClickPart") and workspace.DesertedDesert.VendingMachineClickPart:FindFirstChild("ClickDetector")
+			if cd then
+				fireclickdetector(cd, 0, 0)
+				vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				task.wait(0.3)
+				vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,180,200)
+			else
 				vendingBtn.Text = "❌ Não encontrado"
 				task.wait(1)
 				vendingBtn.Text = "🏪 Ativar Vending Machine"
+			end
+		end)
+
+		-- Botão Dragão
+		local dragonBtn = createButton(clickContainer, "🐉 Ativar Dragão", Cache.Color3_fromRGB(200,80,80))
+		dragonBtn.Size = Cache.UDim2_new(0.9,0,0,30)
+		dragonBtn.MouseButton1Click:Connect(function()
+			local cd = workspace:FindFirstChild("DragonBossStuff") and workspace.DragonBossStuff:FindFirstChild("ClickPart") and workspace.DragonBossStuff.ClickPart:FindFirstChild("ClickDetector")
+			if cd then
+				fireclickdetector(cd, 0, 0)
+				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				task.wait(0.3)
+				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,80,80)
+			else
+				dragonBtn.Text = "❌ Não encontrado"
+				task.wait(1)
+				dragonBtn.Text = "🐉 Ativar Dragão"
 			end
 		end)
 
@@ -1611,6 +1556,21 @@ Keypad3 - Health Bars]]
 		spawnListLayout.Padding = UDim.new(0,4)
 		spawnListLayout.Parent = spawnListFrame
 
+		-- Função para teleportar com NoClip automático
+		local function teleportWithNoClip(targetPos)
+			if State.isTeleporting then return end
+			-- Ativa NoClip
+			Movement.enableNoClip()
+			-- Inicia teleporte
+			local success = Teleport.ultraSmoothTeleport(targetPos)
+			-- Quando terminar (ou falhar), desativa NoClip
+			task.wait(0.1) -- pequeno delay para garantir que o teleporte começou
+			while State.isTeleporting do
+				task.wait(0.1)
+			end
+			Movement.disableNoClip()
+		end
+
 		local function populateSpawnList()
 			for _,c in ipairs(spawnListFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
 
@@ -1626,10 +1586,10 @@ Keypad3 - Health Bars]]
 				end
 			end
 
-			-- Wendigo BossSpawnPart (busca robusta)
-			local wendigoSpawn = findWendigoSpawn()
-			if wendigoSpawn then
-				table.insert(positions, { name = "Wendigo Spawn", part = wendigoSpawn })
+			-- Wendigo BossSpawnPart (caminho fixo)
+			local wendigoPart = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Wendigo") and workspace.DesertedDesert.Wendigo:FindFirstChild("BossSpawnPart")
+			if wendigoPart and wendigoPart:IsA("BasePart") then
+				table.insert(positions, { name = "Wendigo Spawn", part = wendigoPart })
 			end
 
 			if #positions == 0 then
@@ -1668,7 +1628,7 @@ Keypad3 - Health Bars]]
 					local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
 					btn.MouseButton1Click:Connect(function()
 						local targetPos = data.part.Position + Cache.Vector3_new(0, 2, 5)
-						Teleport.ultraSmoothTeleport(targetPos)
+						task.spawn(function() teleportWithNoClip(targetPos) end)
 						btn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
 						task.wait(0.3)
 						btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
