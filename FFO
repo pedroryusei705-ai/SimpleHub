@@ -1,16 +1,3 @@
---//====================================================--
---//           CYBER HUB - FFRE EDITION V4.7           --
---//====================================================--
---//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --
---//  ESP + Tracers + Health Bars (Workspace.Alive)     --
---//  Dual Autofarm Mode: Behind / Above NPC            --
---//  Kill Aura (estilo deob) + Config System           --
---//  Resizable & Draggable Window                      --
---//  + Burst Count Configurable (1-10)                 --
---//  + Nova aba Desert Raid (ClickDetectors + Spawns) --
---//  + FullBright + FPS Booster (Misc)                --
---//====================================================--
-
 local CyberHub = (function()
 
 --//====================================================--
@@ -1979,28 +1966,6 @@ end)
 ConfigManager.loadAutoload()
 task.wait(0.5)
 if GUI.refreshToggles then GUI.refreshToggles() end
-
-print("═══════════════════════════════════════════════")
-print("        CYBER HUB - FFRE EDITION V4.7         ")
-print("═══════════════════════════════════════════════")
-print("  ⚔️  Combat: Auto Farm | Lock On | Kill Aura")
-print("  🚀  Movement: Speed | Infinite Jump | No Clip")
-print("  👁️  Visual: ESP | Tracers | Health Bars")
-print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
-print("  ⚙️  Config: Save/Load/Overwrite profiles")
-print("  🖱️  Window: Draggable & Resizable")
-print("  🔥  Burst Count: ajustável (1-10)")
-print("  🏜️  Desert Raid: ClickDetectors + Spawn TP")
-print("  💡  FullBright + FPS Booster (Misc)")
-print("═══════════════════════════════════════════════")
-print("  F1   - Toggle GUI")
-print("  KP1  - Kill Aura (Auto Attack)")
-print("  KP2  - Auto Farm")
-print("  N    - Speed Boost")
-print("  Y    - Infinite Jump")
-print("  KP0  - ESP")
-print("  KP3  - Health Bars")
-print("═══════════════════════════════════════════════")
 
 return {
 	Core = Core,
