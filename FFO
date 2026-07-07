@@ -7,7 +7,7 @@
 --//  Kill Aura (estilo deob) + Config System           --
 --//  Resizable & Draggable Window                      --
 --//  + Burst Count Configurable (1-10)                 --
---//  + Nova aba Desert Raid                           --
+--//  + Nova aba Desert Raid (ClickDetectors + Spawns) --
 --//====================================================--
 
 local CyberHub = (function()
@@ -1127,7 +1127,7 @@ local GUI = (function()
 		local teleportBtn = createSidebarBtn(sidebar, "📍", "TeleportBtn")
 		local configBtn = createSidebarBtn(sidebar, "⚙", "ConfigBtn")
 		local miscBtn = createSidebarBtn(sidebar, "🔧", "MiscBtn")
-		local desertBtn = createSidebarBtn(sidebar, "🏜", "DesertBtn") -- NOVO
+		local desertBtn = createSidebarBtn(sidebar, "🏜", "DesertBtn")
 
 		local contentArea = Instance.new("Frame")
 		contentArea.Size = Cache.UDim2_new(1,-60,1,-40)
@@ -1140,7 +1140,7 @@ local GUI = (function()
 		local teleportPage = createPage("TeleportPage", contentArea)
 		local configPage = createPage("ConfigPage", contentArea)
 		local miscPage = createPage("MiscPage", contentArea)
-		local desertPage = createPage("DesertPage", contentArea) -- NOVO
+		local desertPage = createPage("DesertPage", contentArea)
 
 		local allPages = {combatPage, visualPage, teleportPage, configPage, miscPage, desertPage}
 		local allBtns = {combatBtn, visualBtn, teleportBtn, configBtn, miscBtn, desertBtn}
@@ -1159,7 +1159,7 @@ local GUI = (function()
 		teleportBtn.MouseButton1Click:Connect(function() switchPage(teleportPage, teleportBtn) end)
 		configBtn.MouseButton1Click:Connect(function() switchPage(configPage, configBtn) end)
 		miscBtn.MouseButton1Click:Connect(function() switchPage(miscPage, miscBtn) end)
-		desertBtn.MouseButton1Click:Connect(function() switchPage(desertPage, desertBtn) end) -- NOVO
+		desertBtn.MouseButton1Click:Connect(function() switchPage(desertPage, desertBtn) end)
 		switchPage(combatPage, combatBtn)
 
 		-- COMBAT PAGE
@@ -1462,24 +1462,35 @@ Keypad3 - Health Bars]]
 		-- ===================================================== --
 		createSectionHeader(desertPage, "Desert Raid")
 
-		-- Botões para ClickDetectors
+		-- Função auxiliar para encontrar um ClickDetector por caminho
+		local function findClickDetector(path)
+			local current = workspace
+			for _, name in ipairs(path) do
+				current = current:FindFirstChild(name)
+				if not current then return nil end
+			end
+			return current
+		end
+
+		-- Container para botões (vertical)
 		local clickContainer = Instance.new("Frame")
-		clickContainer.Size = Cache.UDim2_new(1,0,0,80)
+		clickContainer.Size = Cache.UDim2_new(1,0,0,140) -- altura para 3 botões
 		clickContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
 		clickContainer.BorderSizePixel = 0
 		clickContainer.Parent = desertPage
 		local clickCorner = Instance.new("UICorner"); clickCorner.CornerRadius = UDim.new(0,6); clickCorner.Parent = clickContainer
 		local clickLayout = Instance.new("UIListLayout")
-		clickLayout.FillDirection = Enum.FillDirection.Horizontal
-		clickLayout.Padding = UDim.new(0,10)
+		clickLayout.FillDirection = Enum.FillDirection.Vertical
 		clickLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		clickLayout.Padding = UDim.new(0,6)
 		clickLayout.Parent = clickContainer
-		local clickPadding = Instance.new("UIPadding"); clickPadding.PaddingTop = UDim.new(0,10); clickPadding.Parent = clickContainer
+		local clickPadding = Instance.new("UIPadding"); clickPadding.PaddingTop = UDim.new(0,8); clickPadding.Parent = clickContainer
 
+		-- Botão Pedestal
 		local pedestalBtn = createButton(clickContainer, "🔮 Ativar Pedestal", Cache.Color3_fromRGB(200,180,80))
-		pedestalBtn.Size = Cache.UDim2_new(0,160,0,30)
+		pedestalBtn.Size = Cache.UDim2_new(0.9,0,0,30)
 		pedestalBtn.MouseButton1Click:Connect(function()
-			local detector = workspace:FindFirstChild("DesertDesert") and workspace.DesertDesert:FindFirstChild("Pedestal") and workspace.DesertDesert.Pedestal:FindFirstChild("ClickDetector")
+			local detector = findClickDetector({"DesertDesert", "Pedestal", "ClickDetector"})
 			if detector then
 				fireclickdetector(detector)
 				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
@@ -1492,10 +1503,11 @@ Keypad3 - Health Bars]]
 			end
 		end)
 
+		-- Botão Dragão
 		local dragonBtn = createButton(clickContainer, "🐉 Ativar Dragão", Cache.Color3_fromRGB(200,80,80))
-		dragonBtn.Size = Cache.UDim2_new(0,160,0,30)
+		dragonBtn.Size = Cache.UDim2_new(0.9,0,0,30)
 		dragonBtn.MouseButton1Click:Connect(function()
-			local detector = workspace:FindFirstChild("DesertDesert") and workspace.DesertDesert:FindFirstChild("DragonBossStuff") and workspace.DesertDesert.DragonBossStuff:FindFirstChild("ClickPart") and workspace.DesertDesert.DragonBossStuff.ClickPart:FindFirstChild("ClickDetector")
+			local detector = findClickDetector({"DesertDesert", "DragonBossStuff", "ClickPart", "ClickDetector"})
 			if detector then
 				fireclickdetector(detector)
 				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
@@ -1505,6 +1517,23 @@ Keypad3 - Health Bars]]
 				dragonBtn.Text = "❌ Não encontrado"
 				task.wait(1)
 				dragonBtn.Text = "🐉 Ativar Dragão"
+			end
+		end)
+
+		-- Botão Vending Machine (novo)
+		local vendingBtn = createButton(clickContainer, "🏪 Ativar Vending Machine", Cache.Color3_fromRGB(80,180,200))
+		vendingBtn.Size = Cache.UDim2_new(0.9,0,0,30)
+		vendingBtn.MouseButton1Click:Connect(function()
+			local detector = findClickDetector({"DesertDesert", "Pedestal", "VendingMachineClickPart", "ClickDetector"})
+			if detector then
+				fireclickdetector(detector)
+				vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				task.wait(0.3)
+				vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,180,200)
+			else
+				vendingBtn.Text = "❌ Não encontrado"
+				task.wait(1)
+				vendingBtn.Text = "🏪 Ativar Vending Machine"
 			end
 		end)
 
@@ -1538,7 +1567,6 @@ Keypad3 - Health Bars]]
 		spawnListLayout.Parent = spawnListFrame
 
 		local function populateSpawnList()
-			-- Limpa lista
 			for _,c in ipairs(spawnListFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
 
 			local positions = {}
@@ -1571,7 +1599,6 @@ Keypad3 - Health Bars]]
 				empty.Parent = spawnListFrame
 				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = empty
 			else
-				-- Ordena por nome (ArtifactSpawn aparecem juntos)
 				table.sort(positions, function(a,b)
 					if a.name == b.name then return a.part.Name < b.part.Name end
 					return a.name < b.name
