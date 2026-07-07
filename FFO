@@ -473,7 +473,7 @@ local Combat = (function()
 
 	local autoAttackThread = nil
 	local autoAttackRunning = false
-	local attackCooldown = 0.12 -- padrão
+	local attackCooldown = 0.12
 
 	local function startAutoAttack()
 		if autoAttackThread then return end
@@ -1458,18 +1458,44 @@ Keypad3 - Health Bars]]
 		bindsText.Parent = bindsContainer
 
 		-- ===================================================== --
-		--                  DESERT RAID PAGE (NOVA)              --
+		--              DESERT RAID PAGE (MELHORADA)             --
 		-- ===================================================== --
 		createSectionHeader(desertPage, "Desert Raid")
 
-		-- Função auxiliar para encontrar um ClickDetector por caminho
-		local function findClickDetector(path)
-			local current = workspace
-			for _, name in ipairs(path) do
-				current = current:FindFirstChild(name)
-				if not current then return nil end
+		-- Função para encontrar ClickDetectors recursivamente em DesertDesert
+		local function findClickDetectorsRecursive()
+			local results = {}
+			local desert = workspace:FindFirstChild("DesertDesert")
+			if not desert then return results end
+
+			local function search(obj, path)
+				for _, child in ipairs(obj:GetChildren()) do
+					local newPath = path .. "." .. child.Name
+					if child:IsA("ClickDetector") then
+						table.insert(results, { detector = child, path = newPath, parent = obj })
+					else
+						search(child, newPath)
+					end
+				end
 			end
-			return current
+			search(desert, "DesertDesert")
+			return results
+		end
+
+		-- Função para encontrar a BossSpawnPart do Wendigo
+		local function findWendigoSpawn()
+			local wendigo = workspace:FindFirstChild("DesertDesert") and workspace.DesertDesert:FindFirstChild("Wendigo")
+			if wendigo then
+				local spawn = wendigo:FindFirstChild("BossSpawnPart")
+				if spawn and spawn:IsA("BasePart") then return spawn end
+				-- busca recursiva caso esteja mais fundo
+				for _, child in ipairs(wendigo:GetDescendants()) do
+					if child.Name == "BossSpawnPart" and child:IsA("BasePart") then
+						return child
+					end
+				end
+			end
+			return nil
 		end
 
 		-- Container para botões (vertical)
@@ -1490,13 +1516,20 @@ Keypad3 - Health Bars]]
 		local pedestalBtn = createButton(clickContainer, "🔮 Ativar Pedestal", Cache.Color3_fromRGB(200,180,80))
 		pedestalBtn.Size = Cache.UDim2_new(0.9,0,0,30)
 		pedestalBtn.MouseButton1Click:Connect(function()
-			local detector = findClickDetector({"DesertDesert", "Pedestal", "ClickDetector"})
-			if detector then
-				fireclickdetector(detector)
-				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
-				task.wait(0.3)
-				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,180,80)
-			else
+			-- Busca por um ClickDetector cujo pai seja "Pedestal"
+			local detectors = findClickDetectorsRecursive()
+			local found = false
+			for _, info in ipairs(detectors) do
+				if info.parent.Name == "Pedestal" then
+					fireclickdetector(info.detector)
+					found = true
+					pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+					task.wait(0.3)
+					pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,180,80)
+					break
+				end
+			end
+			if not found then
 				pedestalBtn.Text = "❌ Não encontrado"
 				task.wait(1)
 				pedestalBtn.Text = "🔮 Ativar Pedestal"
@@ -1507,30 +1540,42 @@ Keypad3 - Health Bars]]
 		local dragonBtn = createButton(clickContainer, "🐉 Ativar Dragão", Cache.Color3_fromRGB(200,80,80))
 		dragonBtn.Size = Cache.UDim2_new(0.9,0,0,30)
 		dragonBtn.MouseButton1Click:Connect(function()
-			local detector = findClickDetector({"DesertDesert", "DragonBossStuff", "ClickPart", "ClickDetector"})
-			if detector then
-				fireclickdetector(detector)
-				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
-				task.wait(0.3)
-				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,80,80)
-			else
+			local detectors = findClickDetectorsRecursive()
+			local found = false
+			for _, info in ipairs(detectors) do
+				if info.parent.Name == "ClickPart" then
+					fireclickdetector(info.detector)
+					found = true
+					dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+					task.wait(0.3)
+					dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,80,80)
+					break
+				end
+			end
+			if not found then
 				dragonBtn.Text = "❌ Não encontrado"
 				task.wait(1)
 				dragonBtn.Text = "🐉 Ativar Dragão"
 			end
 		end)
 
-		-- Botão Vending Machine (novo)
+		-- Botão Vending Machine
 		local vendingBtn = createButton(clickContainer, "🏪 Ativar Vending Machine", Cache.Color3_fromRGB(80,180,200))
 		vendingBtn.Size = Cache.UDim2_new(0.9,0,0,30)
 		vendingBtn.MouseButton1Click:Connect(function()
-			local detector = findClickDetector({"DesertDesert", "Pedestal", "VendingMachineClickPart", "ClickDetector"})
-			if detector then
-				fireclickdetector(detector)
-				vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
-				task.wait(0.3)
-				vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,180,200)
-			else
+			local detectors = findClickDetectorsRecursive()
+			local found = false
+			for _, info in ipairs(detectors) do
+				if info.parent.Name == "VendingMachineClickPart" then
+					fireclickdetector(info.detector)
+					found = true
+					vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+					task.wait(0.3)
+					vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,180,200)
+					break
+				end
+			end
+			if not found then
 				vendingBtn.Text = "❌ Não encontrado"
 				task.wait(1)
 				vendingBtn.Text = "🏪 Ativar Vending Machine"
@@ -1581,10 +1626,10 @@ Keypad3 - Health Bars]]
 				end
 			end
 
-			-- Wendigo BossSpawnPart
-			local wendigoPart = workspace:FindFirstChild("DesertDesert") and workspace.DesertDesert:FindFirstChild("Wendigo") and workspace.DesertDesert.Wendigo:FindFirstChild("BossSpawnPart")
-			if wendigoPart and wendigoPart:IsA("BasePart") then
-				table.insert(positions, { name = "Wendigo Spawn", part = wendigoPart })
+			-- Wendigo BossSpawnPart (busca robusta)
+			local wendigoSpawn = findWendigoSpawn()
+			if wendigoSpawn then
+				table.insert(positions, { name = "Wendigo Spawn", part = wendigoSpawn })
 			end
 
 			if #positions == 0 then
