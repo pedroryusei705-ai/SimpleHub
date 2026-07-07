@@ -702,7 +702,7 @@ local Teleport = (function()
 end)()
 
 --//====================================================--
---//                   CONFIG SYSTEM (REFEITO)          --
+--//              CONFIG SYSTEM (CAMINHO ABSOLUTO)      --
 --//====================================================--
 
 local ConfigManager = (function()
@@ -711,7 +711,30 @@ local ConfigManager = (function()
 	local State = Core.State
 	local Http = Services.HttpService
 
-	local folder = CONFIG.CONFIG_FOLDER
+	-- Tenta obter o diretório do executor (Potassium)
+	local function getExecutorDirectory()
+		if getexecutordirectory then
+			local success, dir = pcall(getexecutordirectory)
+			if success and dir and dir ~= "" then
+				return dir
+			end
+		end
+		return nil
+	end
+
+	local baseFolder = getExecutorDirectory()
+	local folder
+	if baseFolder then
+		-- Se tiver diretório do executor, usa workspace/CyberHubConfigs
+		folder = baseFolder .. "/workspace/CyberHubConfigs"
+		-- Alternativa: se o workspace já for o diretório raiz, use apenas "CyberHubConfigs"
+		-- Mas para garantir, tenta criar a pasta no caminho absoluto.
+	else
+		-- Fallback: caminho relativo (pode não funcionar)
+		folder = "CyberHubConfigs"
+	end
+
+	print("[CyberHub] Pasta de configurações: " .. folder)
 
 	-- Verifica se as funções de arquivo estão disponíveis
 	local function hasFileFunctions()
@@ -720,7 +743,6 @@ local ConfigManager = (function()
 
 	if not hasFileFunctions() then
 		warn("[CyberHub] Funções de arquivo não disponíveis. Configurações não serão salvas.")
-		-- Retorna um objeto dummy com todas as funções vazias, mas com refresh que retorna lista vazia
 		return {
 			saveConfig = function() return false end,
 			loadConfig = function() return false end,
@@ -739,9 +761,10 @@ local ConfigManager = (function()
 		if not isfolder(folder) then
 			local success, err = pcall(makefolder, folder)
 			if not success then
-				warn("[CyberHub] Não foi possível criar a pasta de configurações: " .. tostring(err))
+				warn("[CyberHub] Não foi possível criar a pasta: " .. folder .. " - " .. tostring(err))
 				return false
 			end
+			print("[CyberHub] Pasta criada: " .. folder)
 		end
 		return true
 	end
@@ -750,7 +773,6 @@ local ConfigManager = (function()
 	local function saveConfig(name)
 		if not ensureFolder() then return false end
 		if name == nil or name == "" then name = "unnamed" end
-		-- Remove caracteres inválidos
 		name = name:gsub("[^%w_]", "")
 		if name == "" then name = "unnamed" end
 
@@ -777,14 +799,15 @@ local ConfigManager = (function()
 		local path = folder .. "/" .. name .. ".json"
 		local json, err = pcall(Http.JSONEncode, Http, data)
 		if not json then
-			warn("[CyberHub] Erro ao codificar JSON para '" .. name .. "': " .. tostring(err))
+			warn("[CyberHub] Erro ao codificar JSON: " .. tostring(err))
 			return false
 		end
 		local success, writeErr = pcall(writefile, path, json)
 		if not success then
-			warn("[CyberHub] Erro ao salvar config '" .. name .. "': " .. tostring(writeErr))
+			warn("[CyberHub] Erro ao salvar '" .. path .. "': " .. tostring(writeErr))
 			return false
 		end
+		print("[CyberHub] Configuração salva: " .. path)
 		return true
 	end
 
@@ -796,36 +819,38 @@ local ConfigManager = (function()
 		if name == "" then return false end
 
 		local path = folder .. "/" .. name .. ".json"
-		if not isfile(path) then return false end
+		if not isfile(path) then
+			warn("[CyberHub] Arquivo não encontrado: " .. path)
+			return false
+		end
 
 		local content, err = pcall(readfile, path)
 		if not content then
-			warn("[CyberHub] Erro ao ler config '" .. name .. "': " .. tostring(err))
+			warn("[CyberHub] Erro ao ler '" .. path .. "': " .. tostring(err))
 			return false
 		end
 
 		local decoded = Http:JSONDecode(content)
 		if not decoded then
-			warn("[CyberHub] JSON inválido para config '" .. name .. "'")
+			warn("[CyberHub] JSON inválido: " .. path)
 			return false
 		end
 
-		-- Aplica os valores ao State (apenas os que existem)
 		for k, v in pairs(decoded) do
 			if State[k] ~= nil then
 				State[k] = v
 			end
 		end
 
-		-- Aplica efeitos visuais (FullBright, FPS Booster, etc.)
+		-- Aplica efeitos visuais (FullBright, FPS Booster)
 		if State.fullBrightEnabled then applyFullBright(true) else applyFullBright(false) end
 		if State.fpsBoosterEnabled then applyFPSBooster(true) else applyFPSBooster(false) end
 
-		-- Atualiza a interface (se existir)
 		if GUI and GUI.refreshToggles then
 			GUI.refreshToggles()
 		end
 
+		print("[CyberHub] Configuração carregada: " .. path)
 		return true
 	end
 
@@ -834,7 +859,7 @@ local ConfigManager = (function()
 		if not ensureFolder() then return {} end
 		local files, err = pcall(listfiles, folder)
 		if not files then
-			warn("[CyberHub] Erro ao listar arquivos: " .. tostring(err))
+			warn("[CyberHub] Erro ao listar arquivos em " .. folder .. ": " .. tostring(err))
 			return {}
 		end
 		local names = {}
@@ -857,12 +882,12 @@ local ConfigManager = (function()
 		local path = folder .. "/" .. name .. ".json"
 		if isfile(path) then
 			pcall(delfile, path)
+			print("[CyberHub] Configuração deletada: " .. path)
 			return true
 		end
 		return false
 	end
 
-	-- Sobrescreve (mesmo que save)
 	local function overwriteConfig(name)
 		return saveConfig(name)
 	end
@@ -876,13 +901,14 @@ local ConfigManager = (function()
 		name = name:gsub("[^%w_]", "")
 		if name == "" then return end
 		pcall(writefile, autoloadFile, name)
+		print("[CyberHub] Autoload definido para: " .. name)
 	end
 
 	local function getAutoload()
 		if isfile(autoloadFile) then
 			local content, err = pcall(readfile, autoloadFile)
 			if content then
-				return content:gsub("%s+", "") -- Remove espaços e quebras
+				return content:gsub("%s+", "")
 			end
 		end
 		return nil
@@ -891,16 +917,24 @@ local ConfigManager = (function()
 	local function loadAutoload()
 		local name = getAutoload()
 		if name and name ~= "" then
-			loadConfig(name)
-			return true
+			return loadConfig(name)
 		end
 		return false
 	end
 
-	-- Função de refresh (apenas chama listConfigs, mas pode ser usada para recarregar a lista)
 	local function refreshConfigs()
 		return listConfigs()
 	end
+
+	-- Função de depuração: exibe o caminho atual e lista os arquivos
+	local function debugInfo()
+		print("[CyberHub] Caminho atual: " .. folder)
+		local files = listConfigs()
+		print("[CyberHub] Configurações encontradas: " .. table.concat(files, ", "))
+	end
+
+	-- Chama debugInfo na inicialização
+	task.spawn(debugInfo)
 
 	return {
 		saveConfig      = saveConfig,
@@ -912,9 +946,9 @@ local ConfigManager = (function()
 		getAutoload     = getAutoload,
 		loadAutoload    = loadAutoload,
 		refreshConfigs  = refreshConfigs,
+		debugInfo       = debugInfo,
 	}
 end)()
-
 --//====================================================--
 --//                   GUI SYSTEM                       --
 --//====================================================--
