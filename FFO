@@ -8,7 +8,7 @@
 --//  Resizable & Draggable Window                      --
 --//  + Burst Count Configurable (1-10)                 --
 --//  + Nova aba Desert Raid (ClickDetectors + Spawns) --
---//  + Remove Fog + FPS Booster (Misc)                --
+--//  + FullBright + FPS Booster (Misc)                --
 --//====================================================--
 
 local CyberHub = (function()
@@ -76,7 +76,7 @@ local Core = (function()
 		isTeleporting      = false,
 		burstCount         = 3,
 		-- Novos estados
-		removeFogEnabled   = false,
+		fullBrightEnabled  = false,
 		fpsBoosterEnabled  = false,
 	}
 
@@ -755,7 +755,7 @@ local ConfigManager = (function()
 			playerESPEnabled=State.playerESPEnabled,
 			fovEnabled=State.fovEnabled,
 			burstCount=State.burstCount,
-			removeFogEnabled=State.removeFogEnabled,
+			fullBrightEnabled=State.fullBrightEnabled,
 			fpsBoosterEnabled=State.fpsBoosterEnabled,
 		}
 		local path = folder.."/"..name..".json"
@@ -851,53 +851,41 @@ local GUI = (function()
 	local resizeStartPos, resizeStartSize
 	local selectedProfileBtn = nil
 
-	-- Armazenar valores originais para fog e qualidade
-	local originalFog = {
-		Atmosphere = nil,
-		FogEnd = nil,
-		FogStart = nil,
+	-- Armazenar valores originais para FullBright
+	local originalLighting = {
+		Brightness = nil,
+		Ambient = nil,
+		OutdoorAmbient = nil,
+		Technology = nil,
+		ClockTime = nil,
 	}
 	local originalQuality = nil
 
-	local function applyFog(remove)
-		local ws = workspace
-		if remove then
-			-- Guarda originais se ainda não guardados
-			if originalFog.Atmosphere == nil then
-				local atmo = ws:FindFirstChild("Atmosphere")
-				if atmo then
-					originalFog.Atmosphere = {
-						Density = atmo.Density,
-						Offset = atmo.Offset,
-						Color = atmo.Color,
-						Glare = atmo.Glare,
-					}
-				end
-				originalFog.FogEnd = ws.FogEnd
-				originalFog.FogStart = ws.FogStart
+	local function applyFullBright(enable)
+		local lighting = game:GetService("Lighting")
+		if enable then
+			-- Guarda originais
+			if originalLighting.Brightness == nil then
+				originalLighting.Brightness = lighting.Brightness
+				originalLighting.Ambient = lighting.Ambient
+				originalLighting.OutdoorAmbient = lighting.OutdoorAmbient
+				originalLighting.Technology = lighting.Technology
+				originalLighting.ClockTime = lighting.ClockTime
 			end
-			-- Aplica remoção
-			local atmo = ws:FindFirstChild("Atmosphere")
-			if atmo then
-				atmo.Density = 0
-				atmo.Offset = 0
-				atmo.Color = Color3.new(0,0,0) -- ou branco, tanto faz
-				atmo.Glare = 0
-			end
-			ws.FogEnd = 0
-			ws.FogStart = 0
+			-- Aplica full bright
+			lighting.Brightness = 2
+			lighting.Ambient = Color3.new(1,1,1)
+			lighting.OutdoorAmbient = Color3.new(1,1,1)
+			lighting.Technology = Enum.Technology.Legacy
+			lighting.ClockTime = 12
 		else
 			-- Restaura
-			local atmo = ws:FindFirstChild("Atmosphere")
-			if atmo and originalFog.Atmosphere then
-				atmo.Density = originalFog.Atmosphere.Density
-				atmo.Offset = originalFog.Atmosphere.Offset
-				atmo.Color = originalFog.Atmosphere.Color
-				atmo.Glare = originalFog.Atmosphere.Glare
-			end
-			if originalFog.FogEnd ~= nil then
-				ws.FogEnd = originalFog.FogEnd
-				ws.FogStart = originalFog.FogStart
+			if originalLighting.Brightness ~= nil then
+				lighting.Brightness = originalLighting.Brightness
+				lighting.Ambient = originalLighting.Ambient
+				lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+				lighting.Technology = originalLighting.Technology
+				lighting.ClockTime = originalLighting.ClockTime
 			end
 		end
 	end
@@ -916,7 +904,7 @@ local GUI = (function()
 				rendering.QualityLevel = originalQuality
 				originalQuality = nil
 			end
-			workspace.GlobalShadows = true -- ou restaura o valor padrão, mas pode ser true
+			workspace.GlobalShadows = true -- ou restaura o valor padrão
 		end
 	end
 
@@ -1485,8 +1473,8 @@ local GUI = (function()
 			for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
 			burstLabel.Text = tostring(State.burstCount)
 			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
-			-- Aplicar estados de fog e fps booster após carregar
-			applyFog(State.removeFogEnabled)
+			-- Aplicar estados após carregar
+			applyFullBright(State.fullBrightEnabled)
 			applyFPSBooster(State.fpsBoosterEnabled)
 		end)
 		overwriteBtn.MouseButton1Click:Connect(function()
@@ -1509,8 +1497,8 @@ local GUI = (function()
 		createSectionHeader(miscPage, "Misc")
 		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
 
-		-- NOVOS TOGGLES: Remove Fog e FPS Booster
-		local _, fogToggle, fogBg, fogCircle = createToggle(miscPage, "Remove Fog", "Elimina névoa do jogo", State.removeFogEnabled)
+		-- NOVOS TOGGLES: FullBright e FPS Booster
+		local _, fullBrightToggle, fullBrightBg, fullBrightCircle = createToggle(miscPage, "FullBright", "Ilumina todo o ambiente", State.fullBrightEnabled)
 		local _, fpsToggle, fpsBg, fpsCircle = createToggle(miscPage, "FPS Booster", "Reduz qualidade gráfica para melhor desempenho", State.fpsBoosterEnabled)
 
 		createSectionHeader(miscPage, "Keybinds")
@@ -1793,12 +1781,12 @@ Keypad3 - Health Bars]]
 		end
 		noClipToggle.MouseButton1Click:Connect(function() ToggleFunctions.noClip(not State.noClipEnabled) end)
 
-		ToggleFunctions.removeFog = function(enabled)
-			State.removeFogEnabled = enabled
-			Utils.animateToggle(fogBg, fogCircle, enabled)
-			applyFog(enabled)
+		ToggleFunctions.fullBright = function(enabled)
+			State.fullBrightEnabled = enabled
+			Utils.animateToggle(fullBrightBg, fullBrightCircle, enabled)
+			applyFullBright(enabled)
 		end
-		fogToggle.MouseButton1Click:Connect(function() ToggleFunctions.removeFog(not State.removeFogEnabled) end)
+		fullBrightToggle.MouseButton1Click:Connect(function() ToggleFunctions.fullBright(not State.fullBrightEnabled) end)
 
 		ToggleFunctions.fpsBooster = function(enabled)
 			State.fpsBoosterEnabled = enabled
@@ -1870,7 +1858,7 @@ Keypad3 - Health Bars]]
 			espEnabled={bg=espBg, circle=espCircle}, tracersEnabled={bg=tracersBg, circle=tracersCircle},
 			healthBarsEnabled={bg=healthBarsBg, circle=healthBarsCircle}, playerESPEnabled={bg=playerESPBg, circle=playerESPCircle},
 			fovEnabled={bg=fovBg, circle=fovCircle},
-			removeFogEnabled={bg=fogBg, circle=fogCircle},
+			fullBrightEnabled={bg=fullBrightBg, circle=fullBrightCircle},
 			fpsBoosterEnabled={bg=fpsBg, circle=fpsCircle},
 		}
 
@@ -1879,8 +1867,8 @@ Keypad3 - Health Bars]]
 			ESP.clearAllESP(); ESP.clearAllTracers(); ESP.clearAllHealthBars(); ESP.removeFOVCircle()
 			for _,esp in pairs(State.playerESPObjects) do if esp then esp:Destroy() end end
 			Combat.stopAutoAttack()
-			-- Restaura fog e qualidade ao fechar o gui (opcional)
-			if State.removeFogEnabled then applyFog(false) end
+			-- Restaura fullbright e fps booster ao fechar o gui (opcional)
+			if State.fullBrightEnabled then applyFullBright(false) end
 			if State.fpsBoosterEnabled then applyFPSBooster(false) end
 		end)
 
@@ -2003,7 +1991,7 @@ print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
 print("  🔥  Burst Count: ajustável (1-10)")
 print("  🏜️  Desert Raid: ClickDetectors + Spawn TP")
-print("  🌫️  Remove Fog + FPS Booster (Misc)")
+print("  💡  FullBright + FPS Booster (Misc)")
 print("═══════════════════════════════════════════════")
 print("  F1   - Toggle GUI")
 print("  KP1  - Kill Aura (Auto Attack)")
