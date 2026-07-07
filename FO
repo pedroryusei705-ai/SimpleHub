@@ -1,12 +1,6 @@
 --//====================================================--
---//           CYBER HUB - FFRE EDITION V4.7           --
---//====================================================--
---//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --
---//  ESP + Tracers + Health Bars (Workspace.Alive)     --
---//  Dual Autofarm Mode: Behind / Above NPC            --
---//  Kill Aura (estilo deob) + Config System           --
---//  Resizable & Draggable Window                      --
---//  + Burst Count Configurable (1-10)                 --
+--//           CYBER HUB - FFRE EDITION V4.8           -- (versão visual)
+--//  Estilo Futurista / Glassmorphism (Roxo, Preto, Cinza)
 --//====================================================--
 
 local CyberHub = (function()
@@ -44,7 +38,7 @@ local Core = (function()
 
 	local State = {
 		autofarmEnabled    = false,
-		autofarmMode       = "Above",  -- ALTERADO: agora começa em "Above"
+		autofarmMode       = "Behind",
 		autofarmDistance   = 8,
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
@@ -73,6 +67,8 @@ local Core = (function()
 		currentPage        = "combat",
 		isTeleporting      = false,
 		burstCount         = 3,
+		fullBrightEnabled  = false,
+		fpsBoosterEnabled  = false,
 	}
 
 	local Cache = {
@@ -133,7 +129,7 @@ local Utils = (function()
 	local function animateToggle(bg, circle, enabled)
 		local TweenService = Services.TweenService
 		TweenService:Create(bg, TweenInfo.new(0.2), {
-			BackgroundColor3 = enabled and Cache.Color3_fromRGB(100, 180, 255) or Cache.Color3_fromRGB(40, 40, 55)
+			BackgroundColor3 = enabled and Cache.Color3_fromRGB(124, 58, 237) or Cache.Color3_fromRGB(30, 30, 42)
 		}):Play()
 		TweenService:Create(circle, TweenInfo.new(0.2), {
 			Position = enabled and Cache.UDim2_new(1, -18, 0.5, -8) or Cache.UDim2_new(0, 2, 0.5, -8)
@@ -172,8 +168,7 @@ local NPCCache = (function()
 			if npc:IsA("Model") and npc ~= player.Character then
 				local hum = npc:FindFirstChild("Humanoid")
 				local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-				-- ALTERADO: agora filtra NPCs com vida > 1 (ignora vida 1 ou 0)
-				if hum and npcRoot and hum.Health > 1 then
+				if hum and npcRoot and hum.Health > 0 then
 					local dist = (root.Position - npcRoot.Position).Magnitude
 					if dist <= CONFIG.MAX_DISTANCE then
 						table.insert(State.npcCache, { model=npc, root=npcRoot, humanoid=hum, distance=dist })
@@ -197,8 +192,7 @@ local NPCCache = (function()
 		if not npc or not npc.Parent then return false end
 		local hum = npc:FindFirstChild("Humanoid")
 		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-		-- ALTERADO: agora considera inválido se vida <= 1
-		if not hum or not npcRoot or hum.Health <= 1 then return false end
+		if not hum or not npcRoot or hum.Health <= 0 then return false end
 		local root = Utils.getCharComponents()
 		if not root then return false end
 		return (root.Position - npcRoot.Position).Magnitude <= Core.CONFIG.MAX_DISTANCE
@@ -231,8 +225,8 @@ local ESP = (function()
 		local highlight = Instance.new("Highlight")
 		highlight.Name = "CyberHighlight"
 		highlight.Adornee = npc
-		highlight.FillColor = Cache.Color3_fromRGB(255,0,0)
-		highlight.OutlineColor = Cache.Color3_fromRGB(255,255,255)
+		highlight.FillColor = Cache.Color3_fromRGB(124, 58, 237)
+		highlight.OutlineColor = Cache.Color3_white
 		highlight.FillTransparency = 0.5
 		highlight.OutlineTransparency = 0
 		highlight.Parent = npc
@@ -256,7 +250,7 @@ local ESP = (function()
 		if not npc:FindFirstChild("HumanoidRootPart") then return end
 		local line = Drawing.new("Line")
 		line.Visible = true
-		line.Color = Color3.new(0,1,0)
+		line.Color = Color3.new(0.486, 0.227, 0.929) -- roxo
 		line.Thickness = 2
 		line.Transparency = 0.7
 		State.tracerLines[npc] = line
@@ -322,7 +316,7 @@ local ESP = (function()
 		local bar = Instance.new("Frame")
 		bar.Name = "HealthBar"
 		bar.Size = Cache.UDim2_new(npcHum.Health/npcHum.MaxHealth,0,1,0)
-		bar.BackgroundColor3 = Cache.Color3_fromRGB(0,255,0)
+		bar.BackgroundColor3 = Cache.Color3_fromRGB(124, 58, 237)
 		bar.BorderSizePixel = 0
 		bar.Parent = bg
 		local txt = Instance.new("TextLabel")
@@ -382,8 +376,8 @@ local ESP = (function()
 					local hl = Instance.new("Highlight")
 					hl.Name = "PlayerHighlight"
 					hl.Adornee = char
-					hl.FillColor = Cache.Color3_fromRGB(0,255,255)
-					hl.OutlineColor = Cache.Color3_fromRGB(255,255,255)
+					hl.FillColor = Cache.Color3_fromRGB(167, 139, 250)
+					hl.OutlineColor = Cache.Color3_white
 					hl.FillTransparency = 0.7
 					hl.OutlineTransparency = 0
 					hl.Parent = char
@@ -398,7 +392,7 @@ local ESP = (function()
 		local c = Drawing.new("Circle")
 		c.Visible = true
 		c.Thickness = 2
-		c.Color = Color3.new(1,1,1)
+		c.Color = Color3.new(0.486, 0.227, 0.929)
 		c.Transparency = 0.7
 		c.NumSides = 60
 		c.Radius = 150
@@ -562,28 +556,13 @@ local Combat = (function()
 		if not State.autofarmEnabled then return end
 		local root = Utils.getCharComponents()
 		if not root then return end
-
-		-- Verifica se o NPC atual é válido (vida > 1)
-		if not NPCCache.isValid(State.lockedNPC) then
-			State.lockedNPC = NPCCache.findClosest()
-			-- Validação dupla para garantir que o novo alvo também é válido
-			if not NPCCache.isValid(State.lockedNPC) then
-				State.lockedNPC = nil
-				return
-			end
-		end
-
+		if not NPCCache.isValid(State.lockedNPC) then State.lockedNPC = NPCCache.findClosest() end
 		local npc = State.lockedNPC
 		if not npc then return end
 		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-		if not npcRoot then
-			State.lockedNPC = nil
-			return
-		end
-
+		if not npcRoot then State.lockedNPC = nil return end
 		root.AssemblyLinearVelocity = Cache.Vector3_zero
 		root.AssemblyAngularVelocity = Cache.Vector3_zero
-
 		if State.autofarmMode == "Above" then
 			local targetPos = npcRoot.Position + Cache.Vector3_new(0, State.autofarmDistance, 0)
 			root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90),0,0)
@@ -767,6 +746,8 @@ local ConfigManager = (function()
 			playerESPEnabled=State.playerESPEnabled,
 			fovEnabled=State.fovEnabled,
 			burstCount=State.burstCount,
+			fullBrightEnabled=State.fullBrightEnabled,
+			fpsBoosterEnabled=State.fpsBoosterEnabled,
 		}
 		local path = folder.."/"..name..".json"
 		local success, err = pcall(writefile, path, Http:JSONEncode(data))
@@ -846,7 +827,7 @@ local ConfigManager = (function()
 end)()
 
 --//====================================================--
---//                   GUI SYSTEM                       --
+--//                   GUI SYSTEM                       --  REFEITO
 --//====================================================--
 
 local GUI = (function()
@@ -861,13 +842,79 @@ local GUI = (function()
 	local resizeStartPos, resizeStartSize
 	local selectedProfileBtn = nil
 
+	-- Cores do novo tema
+	local COLORS = {
+		primary   = Cache.Color3_fromRGB(124, 58, 237),    -- roxo
+		primaryLight = Cache.Color3_fromRGB(167, 139, 250),
+		bg        = Cache.Color3_fromRGB(10, 10, 15),      -- preto
+		bg2       = Cache.Color3_fromRGB(18, 18, 28),
+		bg3       = Cache.Color3_fromRGB(26, 26, 42),
+		text      = Cache.Color3_fromRGB(230, 230, 240),
+		textDim   = Cache.Color3_fromRGB(150, 150, 180),
+		accent    = Cache.Color3_fromRGB(124, 58, 237),
+		success   = Cache.Color3_fromRGB(80, 200, 120),
+		danger    = Cache.Color3_fromRGB(220, 80, 80),
+		warning   = Cache.Color3_fromRGB(255, 180, 80),
+	}
+
+	-- Guardar originais para FullBright/FPS
+	local originalLighting = {
+		Brightness = nil, Ambient = nil, OutdoorAmbient = nil,
+		Technology = nil, ClockTime = nil,
+	}
+	local originalQuality = nil
+
+	local function applyFullBright(enable)
+		local lighting = game:GetService("Lighting")
+		if enable then
+			if originalLighting.Brightness == nil then
+				originalLighting.Brightness = lighting.Brightness
+				originalLighting.Ambient = lighting.Ambient
+				originalLighting.OutdoorAmbient = lighting.OutdoorAmbient
+				originalLighting.Technology = lighting.Technology
+				originalLighting.ClockTime = lighting.ClockTime
+			end
+			lighting.Brightness = 2
+			lighting.Ambient = Color3.new(1,1,1)
+			lighting.OutdoorAmbient = Color3.new(1,1,1)
+			lighting.Technology = Enum.Technology.Legacy
+			lighting.ClockTime = 12
+		else
+			if originalLighting.Brightness ~= nil then
+				lighting.Brightness = originalLighting.Brightness
+				lighting.Ambient = originalLighting.Ambient
+				lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+				lighting.Technology = originalLighting.Technology
+				lighting.ClockTime = originalLighting.ClockTime
+			end
+		end
+	end
+
+	local function applyFPSBooster(enable)
+		local settings = settings()
+		local rendering = settings.Rendering
+		if enable then
+			if originalQuality == nil then
+				originalQuality = rendering.QualityLevel
+			end
+			rendering.QualityLevel = 1
+			workspace.GlobalShadows = false
+		else
+			if originalQuality ~= nil then
+				rendering.QualityLevel = originalQuality
+				originalQuality = nil
+			end
+			workspace.GlobalShadows = true
+		end
+	end
+
 	local function makeResizable(frame)
 		local gripSize = 8
 		local grip = Instance.new("Frame")
 		grip.Size = UDim2.new(0, gripSize, 0, gripSize)
 		grip.Position = UDim2.new(1, -gripSize, 1, -gripSize)
-		grip.BackgroundColor3 = Cache.Color3_fromRGB(80,80,100)
-		grip.BackgroundTransparency = 0.5
+		grip.BackgroundColor3 = COLORS.bg3
+		grip.BackgroundTransparency = 0.4
 		grip.BorderSizePixel = 0
 		grip.Parent = frame
 		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,2); corner.Parent = grip
@@ -893,8 +940,9 @@ local GUI = (function()
 
 	local function createSectionHeader(parent, text)
 		local frame = Instance.new("Frame")
-		frame.Size = Cache.UDim2_new(1,0,0,30)
-		frame.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		frame.Size = Cache.UDim2_new(1,0,0,28)
+		frame.BackgroundColor3 = COLORS.bg2
+		frame.BackgroundTransparency = 0.7
 		frame.BorderSizePixel = 0
 		frame.Parent = parent
 		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = frame
@@ -904,26 +952,25 @@ local GUI = (function()
 		label.BackgroundTransparency = 1
 		label.Text = text
 		label.Font = Enum.Font.GothamBold
-		label.TextSize = 12
-		label.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		label.TextSize = 11
+		label.TextColor3 = COLORS.primaryLight
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Parent = frame
-		local icon = Instance.new("TextLabel")
-		icon.Size = Cache.UDim2_new(0,15,1,0)
-		icon.BackgroundTransparency = 1
-		icon.Text = "◇"
-		icon.Font = Enum.Font.GothamBold
-		icon.TextSize = 10
-		icon.TextColor3 = Cache.Color3_fromRGB(100,180,255)
-		icon.TextXAlignment = Enum.TextXAlignment.Left
-		icon.Parent = label
+		local line = Instance.new("Frame")
+		line.Size = Cache.UDim2_new(0,30,0,2)
+		line.Position = Cache.UDim2_new(0,0,1,-2)
+		line.BackgroundColor3 = COLORS.primary
+		line.BorderSizePixel = 0
+		line.Parent = frame
+		local lineCorner = Instance.new("UICorner"); lineCorner.CornerRadius = UDim.new(1,0); lineCorner.Parent = line
 		return frame
 	end
 
 	local function createToggle(parent, labelText, descText, defaultState)
 		local container = Instance.new("Frame")
 		container.Size = Cache.UDim2_new(1,0,0, descText and 55 or 40)
-		container.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		container.BackgroundColor3 = COLORS.bg2
+		container.BackgroundTransparency = 0.6
 		container.BorderSizePixel = 0
 		container.Parent = parent
 		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = container
@@ -934,7 +981,7 @@ local GUI = (function()
 		label.Text = labelText
 		label.Font = Enum.Font.Gotham
 		label.TextSize = 12
-		label.TextColor3 = Cache.Color3_white
+		label.TextColor3 = COLORS.text
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Parent = container
 		if descText then
@@ -945,14 +992,14 @@ local GUI = (function()
 			desc.Text = descText
 			desc.Font = Enum.Font.Gotham
 			desc.TextSize = 9
-			desc.TextColor3 = Cache.Color3_fromRGB(120,120,140)
+			desc.TextColor3 = COLORS.textDim
 			desc.TextWrapped = true
 			desc.Parent = container
 		end
 		local toggleBg = Instance.new("Frame")
 		toggleBg.Size = Cache.UDim2_new(0,38,0,20)
 		toggleBg.Position = Cache.UDim2_new(1,-45,0,10)
-		toggleBg.BackgroundColor3 = defaultState and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
+		toggleBg.BackgroundColor3 = defaultState and COLORS.primary or COLORS.bg3
 		toggleBg.BorderSizePixel = 0
 		toggleBg.Parent = container
 		local toggleBgCorner = Instance.new("UICorner"); toggleBgCorner.CornerRadius = UDim.new(1,0); toggleBgCorner.Parent = toggleBg
@@ -974,7 +1021,8 @@ local GUI = (function()
 	local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
 		local container = Instance.new("Frame")
 		container.Size = Cache.UDim2_new(1,0,0,50)
-		container.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		container.BackgroundColor3 = COLORS.bg2
+		container.BackgroundTransparency = 0.6
 		container.BorderSizePixel = 0
 		container.Parent = parent
 		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = container
@@ -985,7 +1033,7 @@ local GUI = (function()
 		label.Text = labelText
 		label.Font = Enum.Font.Gotham
 		label.TextSize = 11
-		label.TextColor3 = Cache.Color3_white
+		label.TextColor3 = COLORS.text
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Parent = container
 		local valueLabel = Instance.new("TextLabel")
@@ -995,19 +1043,19 @@ local GUI = (function()
 		valueLabel.Text = tostring(defaultVal)
 		valueLabel.Font = Enum.Font.GothamBold
 		valueLabel.TextSize = 11
-		valueLabel.TextColor3 = Cache.Color3_fromRGB(100,180,255)
+		valueLabel.TextColor3 = COLORS.primaryLight
 		valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 		valueLabel.Parent = container
 		local sliderBg = Instance.new("Frame")
 		sliderBg.Size = Cache.UDim2_new(1,-20,0,4)
 		sliderBg.Position = Cache.UDim2_new(0,10,1,-15)
-		sliderBg.BackgroundColor3 = Cache.Color3_fromRGB(30,30,42)
+		sliderBg.BackgroundColor3 = COLORS.bg3
 		sliderBg.BorderSizePixel = 0
 		sliderBg.Parent = container
 		local sliderBgCorner = Instance.new("UICorner"); sliderBgCorner.CornerRadius = UDim.new(1,0); sliderBgCorner.Parent = sliderBg
 		local sliderFill = Instance.new("Frame")
 		sliderFill.Size = Cache.UDim2_new((defaultVal-minVal)/(maxVal-minVal),0,1,0)
-		sliderFill.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+		sliderFill.BackgroundColor3 = COLORS.primary
 		sliderFill.BorderSizePixel = 0
 		sliderFill.Parent = sliderBg
 		local fillCorner = Instance.new("UICorner"); fillCorner.CornerRadius = UDim.new(1,0); fillCorner.Parent = sliderFill
@@ -1022,8 +1070,8 @@ local GUI = (function()
 
 	local function createButton(parent, text, color)
 		local btn = Instance.new("TextButton")
-		btn.Size = Cache.UDim2_new(1,0,0,35)
-		btn.BackgroundColor3 = color or Cache.Color3_fromRGB(100,180,255)
+		btn.Size = Cache.UDim2_new(1,0,0,32)
+		btn.BackgroundColor3 = color or COLORS.primary
 		btn.Text = text
 		btn.Font = Enum.Font.GothamBold
 		btn.TextSize = 12
@@ -1032,6 +1080,9 @@ local GUI = (function()
 		btn.AutoButtonColor = false
 		btn.Parent = parent
 		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = btn
+		-- Efeito hover (opcional)
+		btn.MouseEnter:Connect(function() btn.BackgroundTransparency = 0.2 end)
+		btn.MouseLeave:Connect(function() btn.BackgroundTransparency = 0 end)
 		return btn
 	end
 
@@ -1042,7 +1093,7 @@ local GUI = (function()
 		page.BackgroundTransparency = 1
 		page.BorderSizePixel = 0
 		page.ScrollBarThickness = 3
-		page.ScrollBarImageColor3 = Cache.Color3_fromRGB(80,80,100)
+		page.ScrollBarImageColor3 = COLORS.primary
 		page.CanvasSize = Cache.UDim2_new(0,0,0,0)
 		page.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		page.Visible = false
@@ -1061,11 +1112,12 @@ local GUI = (function()
 		local btn = Instance.new("TextButton")
 		btn.Name = name
 		btn.Size = Cache.UDim2_new(0,35,0,35)
-		btn.BackgroundColor3 = Cache.Color3_fromRGB(22,22,30)
+		btn.BackgroundColor3 = COLORS.bg2
+		btn.BackgroundTransparency = 0.8
 		btn.Text = icon
 		btn.Font = Enum.Font.GothamBold
-		btn.TextSize = 16
-		btn.TextColor3 = Cache.Color3_fromRGB(120,120,140)
+		btn.TextSize = 18
+		btn.TextColor3 = COLORS.textDim
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
 		btn.Parent = parent
@@ -1087,53 +1139,77 @@ local GUI = (function()
 		mainFrame.Name = "MainFrame"
 		mainFrame.Size = UDim2.new(0, CONFIG.WINDOW_DEFAULT_SIZE.X, 0, CONFIG.WINDOW_DEFAULT_SIZE.Y)
 		mainFrame.Position = UDim2.new(0, 20, 0.5, -CONFIG.WINDOW_DEFAULT_SIZE.Y/2)
-		mainFrame.BackgroundColor3 = Cache.Color3_fromRGB(13,13,18)
+		mainFrame.BackgroundColor3 = COLORS.bg
+		mainFrame.BackgroundTransparency = 0.15
 		mainFrame.BorderSizePixel = 0
 		mainFrame.Active = true
 		mainFrame.Draggable = true
 		mainFrame.Parent = screenGui
-		local mainCorner = Instance.new("UICorner"); mainCorner.CornerRadius = UDim.new(0,8); mainCorner.Parent = mainFrame
-		local borderStroke = Instance.new("UIStroke"); borderStroke.Color = Cache.Color3_fromRGB(100,100,120); borderStroke.Thickness = 1; borderStroke.Transparency = 0.5; borderStroke.Parent = mainFrame
+
+		-- Efeito glassmorphism: borda com brilho
+		local mainCorner = Instance.new("UICorner"); mainCorner.CornerRadius = UDim.new(0,12); mainCorner.Parent = mainFrame
+		local borderStroke = Instance.new("UIStroke")
+		borderStroke.Color = COLORS.primary
+		borderStroke.Thickness = 1.5
+		borderStroke.Transparency = 0.6
+		borderStroke.Parent = mainFrame
+		-- Sombra (não nativa, mas ajuda)
+		local shadow = Instance.new("ImageLabel")
+		shadow.Size = UDim2.new(1,20,1,20)
+		shadow.Position = UDim2.new(0,-10,0,-10)
+		shadow.BackgroundTransparency = 1
+		shadow.Image = "rbxassetid://1316047061" -- shadow
+		shadow.ImageColor3 = COLORS.bg
+		shadow.ImageTransparency = 0.6
+		shadow.ZIndex = 0
+		shadow.Parent = mainFrame
+		mainFrame:SetAttribute("Shadow", shadow)
+
 		makeResizable(mainFrame)
 
+		-- Header
 		local header = Instance.new("Frame")
 		header.Size = Cache.UDim2_new(1,0,0,35)
-		header.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		header.BackgroundColor3 = COLORS.bg2
+		header.BackgroundTransparency = 0.4
 		header.BorderSizePixel = 0
 		header.Parent = mainFrame
-		local headerCorner = Instance.new("UICorner"); headerCorner.CornerRadius = UDim.new(0,8); headerCorner.Parent = header
+		local headerCorner = Instance.new("UICorner"); headerCorner.CornerRadius = UDim.new(0,12); headerCorner.Parent = header
 		local titleLabel = Instance.new("TextLabel")
 		titleLabel.Size = Cache.UDim2_new(1,-60,1,0)
 		titleLabel.Position = Cache.UDim2_new(0,10,0,0)
 		titleLabel.BackgroundTransparency = 1
-		titleLabel.Text = "✦ CYBER HUB v4.7"
+		titleLabel.Text = "✦ CYBER HUB v4.8"
 		titleLabel.Font = Enum.Font.GothamBold
-		titleLabel.TextSize = 13
-		titleLabel.TextColor3 = Cache.Color3_white
+		titleLabel.TextSize = 14
+		titleLabel.TextColor3 = COLORS.primaryLight
 		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		titleLabel.Parent = header
 		local closeBtn = Instance.new("TextButton")
 		closeBtn.Size = Cache.UDim2_new(0,25,0,25)
 		closeBtn.Position = Cache.UDim2_new(1,-30,0,5)
-		closeBtn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+		closeBtn.BackgroundColor3 = COLORS.bg3
+		closeBtn.BackgroundTransparency = 0.5
 		closeBtn.Text = "×"
 		closeBtn.Font = Enum.Font.GothamBold
 		closeBtn.TextSize = 18
-		closeBtn.TextColor3 = Cache.Color3_fromRGB(200,200,210)
+		closeBtn.TextColor3 = COLORS.textDim
 		closeBtn.BorderSizePixel = 0
 		closeBtn.Parent = header
 		local closeCorner = Instance.new("UICorner"); closeCorner.CornerRadius = UDim.new(0,4); closeCorner.Parent = closeBtn
 		closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
+		-- Sidebar
 		local sidebar = Instance.new("Frame")
 		sidebar.Size = Cache.UDim2_new(0,45,1,-40)
 		sidebar.Position = Cache.UDim2_new(0,5,0,38)
-		sidebar.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		sidebar.BackgroundColor3 = COLORS.bg2
+		sidebar.BackgroundTransparency = 0.3
 		sidebar.BorderSizePixel = 0
 		sidebar.Parent = mainFrame
-		local sidebarCorner = Instance.new("UICorner"); sidebarCorner.CornerRadius = UDim.new(0,6); sidebarCorner.Parent = sidebar
+		local sidebarCorner = Instance.new("UICorner"); sidebarCorner.CornerRadius = UDim.new(0,8); sidebarCorner.Parent = sidebar
 		local sidebarLayout = Instance.new("UIListLayout")
-		sidebarLayout.Padding = UDim.new(0,5)
+		sidebarLayout.Padding = UDim.new(0,6)
 		sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		sidebarLayout.Parent = sidebar
 		local sidebarPadding = Instance.new("UIPadding"); sidebarPadding.PaddingTop = UDim.new(0,8); sidebarPadding.Parent = sidebar
@@ -1143,6 +1219,7 @@ local GUI = (function()
 		local teleportBtn = createSidebarBtn(sidebar, "📍", "TeleportBtn")
 		local configBtn = createSidebarBtn(sidebar, "⚙", "ConfigBtn")
 		local miscBtn = createSidebarBtn(sidebar, "🔧", "MiscBtn")
+		local desertBtn = createSidebarBtn(sidebar, "🏜", "DesertBtn")
 
 		local contentArea = Instance.new("Frame")
 		contentArea.Size = Cache.UDim2_new(1,-60,1,-40)
@@ -1155,17 +1232,20 @@ local GUI = (function()
 		local teleportPage = createPage("TeleportPage", contentArea)
 		local configPage = createPage("ConfigPage", contentArea)
 		local miscPage = createPage("MiscPage", contentArea)
+		local desertPage = createPage("DesertPage", contentArea)
 
-		local allPages = {combatPage, visualPage, teleportPage, configPage, miscPage}
-		local allBtns = {combatBtn, visualBtn, teleportBtn, configBtn, miscBtn}
+		local allPages = {combatPage, visualPage, teleportPage, configPage, miscPage, desertPage}
+		local allBtns = {combatBtn, visualBtn, teleportBtn, configBtn, miscBtn, desertBtn}
 		local function switchPage(targetPage, targetBtn)
 			for _,p in ipairs(allPages) do p.Visible = false end
 			for _,b in ipairs(allBtns) do
-				b.BackgroundColor3 = Cache.Color3_fromRGB(22,22,30)
-				b.TextColor3 = Cache.Color3_fromRGB(120,120,140)
+				b.BackgroundColor3 = COLORS.bg2
+				b.BackgroundTransparency = 0.8
+				b.TextColor3 = COLORS.textDim
 			end
 			targetPage.Visible = true
-			targetBtn.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+			targetBtn.BackgroundColor3 = COLORS.primary
+			targetBtn.BackgroundTransparency = 0.3
 			targetBtn.TextColor3 = Cache.Color3_white
 		end
 		combatBtn.MouseButton1Click:Connect(function() switchPage(combatPage, combatBtn) end)
@@ -1173,15 +1253,17 @@ local GUI = (function()
 		teleportBtn.MouseButton1Click:Connect(function() switchPage(teleportPage, teleportBtn) end)
 		configBtn.MouseButton1Click:Connect(function() switchPage(configPage, configBtn) end)
 		miscBtn.MouseButton1Click:Connect(function() switchPage(miscPage, miscBtn) end)
+		desertBtn.MouseButton1Click:Connect(function() switchPage(desertPage, desertBtn) end)
 		switchPage(combatPage, combatBtn)
 
-		-- COMBAT PAGE
+		-- ============ COMBAT PAGE ============
 		createSectionHeader(combatPage, "Auto Farm")
 		local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(combatPage, "Auto Farm", "Farm nearest NPC", State.autofarmEnabled)
 		
 		local modeContainer = Instance.new("Frame")
 		modeContainer.Size = Cache.UDim2_new(1,0,0,60)
-		modeContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		modeContainer.BackgroundColor3 = COLORS.bg2
+		modeContainer.BackgroundTransparency = 0.6
 		modeContainer.BorderSizePixel = 0
 		modeContainer.Parent = combatPage
 		local modeCorner = Instance.new("UICorner"); modeCorner.CornerRadius = UDim.new(0,6); modeCorner.Parent = modeContainer
@@ -1192,7 +1274,7 @@ local GUI = (function()
 		modeLabel.Text = "Farm Position"
 		modeLabel.Font = Enum.Font.GothamBold
 		modeLabel.TextSize = 11
-		modeLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		modeLabel.TextColor3 = COLORS.textDim
 		modeLabel.TextXAlignment = Enum.TextXAlignment.Left
 		modeLabel.Parent = modeContainer
 		local modeBtnFrame = Instance.new("Frame")
@@ -1206,11 +1288,11 @@ local GUI = (function()
 		modeLayout.Parent = modeBtnFrame
 		local behindBtn = Instance.new("TextButton")
 		behindBtn.Size = Cache.UDim2_new(0,130,0,28)
-		behindBtn.BackgroundColor3 = Cache.Color3_fromRGB(40,40,55)
+		behindBtn.BackgroundColor3 = COLORS.bg3
 		behindBtn.Text = "Behind"
 		behindBtn.Font = Enum.Font.GothamBold
 		behindBtn.TextSize = 11
-		behindBtn.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		behindBtn.TextColor3 = COLORS.textDim
 		behindBtn.BorderSizePixel = 0
 		behindBtn.AutoButtonColor = false
 		behindBtn.Parent = modeBtnFrame
@@ -1220,10 +1302,10 @@ local GUI = (function()
 		aboveBtn.Parent = modeBtnFrame
 		local function updateModeVisuals()
 			local isBehind = (State.autofarmMode == "Behind")
-			behindBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(40,40,55)
-			behindBtn.TextColor3 = isBehind and Cache.Color3_white or Cache.Color3_fromRGB(180,180,200)
-			aboveBtn.BackgroundColor3 = isBehind and Cache.Color3_fromRGB(40,40,55) or Cache.Color3_fromRGB(100,180,255)
-			aboveBtn.TextColor3 = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
+			behindBtn.BackgroundColor3 = isBehind and COLORS.primary or COLORS.bg3
+			behindBtn.TextColor3 = isBehind and Cache.Color3_white or COLORS.textDim
+			aboveBtn.BackgroundColor3 = isBehind and COLORS.bg3 or COLORS.primary
+			aboveBtn.TextColor3 = isBehind and COLORS.textDim or Cache.Color3_white
 		end
 		behindBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Behind"; updateModeVisuals() end)
 		aboveBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Above"; updateModeVisuals() end)
@@ -1239,7 +1321,7 @@ local GUI = (function()
 		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
 		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "", State.infiniteJumpEnabled)
 
-		-- VISUAL PAGE
+		-- ============ VISUAL PAGE ============
 		createSectionHeader(visualPage, "NPC Visuals")
 		local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "", State.espEnabled)
 		local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "", State.tracersEnabled)
@@ -1248,12 +1330,12 @@ local GUI = (function()
 		local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "", State.playerESPEnabled)
 		local _, fovToggle, fovBg, fovCircle = createToggle(visualPage, "FOV Circle", "", State.fovEnabled)
 
-		-- TELEPORT PAGE
+		-- ============ TELEPORT PAGE ============
 		createSectionHeader(teleportPage, "Safe Teleport")
 		local tpInfo = Instance.new("Frame")
 		tpInfo.Size = Cache.UDim2_new(1,0,0,55)
-		tpInfo.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
-		tpInfo.BackgroundTransparency = 0.9
+		tpInfo.BackgroundColor3 = COLORS.primary
+		tpInfo.BackgroundTransparency = 0.85
 		tpInfo.BorderSizePixel = 0
 		tpInfo.Parent = teleportPage
 		local tpInfoCorner = Instance.new("UICorner"); tpInfoCorner.CornerRadius = UDim.new(0,6); tpInfoCorner.Parent = tpInfo
@@ -1268,10 +1350,11 @@ local GUI = (function()
 		tpInfoLabel.TextWrapped = true
 		tpInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 		tpInfoLabel.Parent = tpInfo
-		local refreshBtn = createButton(teleportPage, "🔄 Refresh NPC List", Cache.Color3_fromRGB(80,200,120))
+		local refreshBtn = createButton(teleportPage, "🔄 Refresh NPC List", COLORS.success)
 		local npcListFrame = Instance.new("ScrollingFrame")
 		npcListFrame.Size = Cache.UDim2_new(1,0,0,200)
-		npcListFrame.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		npcListFrame.BackgroundColor3 = COLORS.bg2
+		npcListFrame.BackgroundTransparency = 0.6
 		npcListFrame.BorderSizePixel = 0
 		npcListFrame.CanvasSize = Cache.UDim2_new(0,0,0,0)
 		npcListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -1285,20 +1368,22 @@ local GUI = (function()
 			for _,name in ipairs(Teleport.getNPCList()) do
 				local btn = Instance.new("TextButton")
 				btn.Size = Cache.UDim2_new(1,-10,0,30)
-				btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+				btn.BackgroundColor3 = COLORS.bg3
+				btn.BackgroundTransparency = 0.5
 				btn.Text = "   📌 "..name
 				btn.Font = Enum.Font.Gotham
 				btn.TextSize = 11
-				btn.TextColor3 = Cache.Color3_white
+				btn.TextColor3 = COLORS.text
 				btn.TextXAlignment = Enum.TextXAlignment.Left
 				btn.BorderSizePixel = 0
 				btn.Parent = npcListFrame
 				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
 				btn.MouseButton1Click:Connect(function()
 					Teleport.safeTeleportToNPC(name)
-					btn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+					btn.BackgroundColor3 = COLORS.success
 					task.wait(0.3)
-					btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+					btn.BackgroundColor3 = COLORS.bg3
+					btn.BackgroundTransparency = 0.5
 				end)
 			end
 			npcListFrame.CanvasSize = Cache.UDim2_new(0,0,0, #Teleport.getNPCList() * 34 + 10)
@@ -1306,12 +1391,12 @@ local GUI = (function()
 		refreshBtn.MouseButton1Click:Connect(populateNPCList)
 		task.spawn(populateNPCList)
 
-		-- CONFIG PAGE
+		-- ============ CONFIG PAGE ============
 		createSectionHeader(configPage, "Profile Manager")
 		local configInfo = Instance.new("Frame")
 		configInfo.Size = Cache.UDim2_new(1,0,0,45)
-		configInfo.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
-		configInfo.BackgroundTransparency = 0.9
+		configInfo.BackgroundColor3 = COLORS.primary
+		configInfo.BackgroundTransparency = 0.85
 		configInfo.BorderSizePixel = 0
 		configInfo.Parent = configPage
 		local configCorner = Instance.new("UICorner"); configCorner.CornerRadius = UDim.new(0,6); configCorner.Parent = configInfo
@@ -1329,7 +1414,8 @@ local GUI = (function()
 
 		local nameContainer = Instance.new("Frame")
 		nameContainer.Size = Cache.UDim2_new(1,0,0,45)
-		nameContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		nameContainer.BackgroundColor3 = COLORS.bg2
+		nameContainer.BackgroundTransparency = 0.6
 		nameContainer.BorderSizePixel = 0
 		nameContainer.Parent = configPage
 		local nameCorner = Instance.new("UICorner"); nameCorner.CornerRadius = UDim.new(0,6); nameCorner.Parent = nameContainer
@@ -1340,17 +1426,17 @@ local GUI = (function()
 		nameLabel.Text = "Profile:"
 		nameLabel.Font = Enum.Font.GothamBold
 		nameLabel.TextSize = 11
-		nameLabel.TextColor3 = Cache.Color3_white
+		nameLabel.TextColor3 = COLORS.text
 		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 		nameLabel.Parent = nameContainer
 		local nameBox = Instance.new("TextBox")
 		nameBox.Size = Cache.UDim2_new(0,180,0,28)
 		nameBox.Position = Cache.UDim2_new(0,80,0.5,-14)
-		nameBox.BackgroundColor3 = Cache.Color3_fromRGB(30,30,42)
+		nameBox.BackgroundColor3 = COLORS.bg3
 		nameBox.Text = "default"
 		nameBox.Font = Enum.Font.Gotham
 		nameBox.TextSize = 11
-		nameBox.TextColor3 = Cache.Color3_white
+		nameBox.TextColor3 = COLORS.text
 		nameBox.BorderSizePixel = 0
 		nameBox.Parent = nameContainer
 		local nameBoxCorner = Instance.new("UICorner"); nameBoxCorner.CornerRadius = UDim.new(0,4); nameBoxCorner.Parent = nameBox
@@ -1364,11 +1450,11 @@ local GUI = (function()
 		btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		btnLayout.Padding = UDim.new(0,6)
 		btnLayout.Parent = btnContainer
-		local saveBtn = createButton(btnContainer, "Save", Cache.Color3_fromRGB(80,200,120))
-		local loadBtn = createButton(btnContainer, "Load", Cache.Color3_fromRGB(100,180,255))
-		local overwriteBtn = createButton(btnContainer, "Overwrite", Cache.Color3_fromRGB(255,180,80))
-		local deleteBtn = createButton(btnContainer, "Delete", Cache.Color3_fromRGB(220,80,80))
-		local autoloadBtn = createButton(btnContainer, "Autoload", Cache.Color3_fromRGB(255,180,80))
+		local saveBtn = createButton(btnContainer, "Save", COLORS.success)
+		local loadBtn = createButton(btnContainer, "Load", COLORS.primary)
+		local overwriteBtn = createButton(btnContainer, "Overwrite", COLORS.warning)
+		local deleteBtn = createButton(btnContainer, "Delete", COLORS.danger)
+		local autoloadBtn = createButton(btnContainer, "Autoload", COLORS.warning)
 		saveBtn.Size = Cache.UDim2_new(0,65,0,30)
 		loadBtn.Size = Cache.UDim2_new(0,65,0,30)
 		overwriteBtn.Size = Cache.UDim2_new(0,85,0,30)
@@ -1377,7 +1463,8 @@ local GUI = (function()
 
 		local profileList = Instance.new("ScrollingFrame")
 		profileList.Size = Cache.UDim2_new(1,0,0,140)
-		profileList.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		profileList.BackgroundColor3 = COLORS.bg2
+		profileList.BackgroundTransparency = 0.6
 		profileList.BorderSizePixel = 0
 		profileList.CanvasSize = Cache.UDim2_new(0,0,0,0)
 		profileList.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -1393,11 +1480,12 @@ local GUI = (function()
 			for _,name in ipairs(names) do
 				local btn = Instance.new("TextButton")
 				btn.Size = Cache.UDim2_new(1,-10,0,28)
-				btn.BackgroundColor3 = (selectedName == name) and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(25,25,35)
+				btn.BackgroundColor3 = (selectedName == name) and COLORS.primary or COLORS.bg3
+				btn.BackgroundTransparency = (selectedName == name) and 0.3 or 0.5
 				btn.Text = "   📄 "..name
 				btn.Font = Enum.Font.Gotham
 				btn.TextSize = 11
-				btn.TextColor3 = (selectedName == name) and Cache.Color3_white or Cache.Color3_fromRGB(200,200,210)
+				btn.TextColor3 = (selectedName == name) and Cache.Color3_white or COLORS.textDim
 				btn.TextXAlignment = Enum.TextXAlignment.Left
 				btn.BorderSizePixel = 0
 				btn.Parent = profileList
@@ -1423,6 +1511,8 @@ local GUI = (function()
 			for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
 			burstLabel.Text = tostring(State.burstCount)
 			burstFill.Size = Cache.UDim2_new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
+			applyFullBright(State.fullBrightEnabled)
+			applyFPSBooster(State.fpsBoosterEnabled)
 		end)
 		overwriteBtn.MouseButton1Click:Connect(function()
 			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
@@ -1440,18 +1530,20 @@ local GUI = (function()
 		end)
 		refreshProfileList()
 
-		-- MISC PAGE
+		-- ============ MISC PAGE ============
 		createSectionHeader(miscPage, "Misc")
 		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
+		local _, fullBrightToggle, fullBrightBg, fullBrightCircle = createToggle(miscPage, "FullBright", "Ilumina todo o ambiente", State.fullBrightEnabled)
+		local _, fpsToggle, fpsBg, fpsCircle = createToggle(miscPage, "FPS Booster", "Reduz qualidade gráfica para melhor desempenho", State.fpsBoosterEnabled)
 
 		createSectionHeader(miscPage, "Keybinds")
 		local bindsContainer = Instance.new("Frame")
 		bindsContainer.Size = Cache.UDim2_new(1,0,0,100)
-		bindsContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		bindsContainer.BackgroundColor3 = COLORS.bg2
+		bindsContainer.BackgroundTransparency = 0.6
 		bindsContainer.BorderSizePixel = 0
 		bindsContainer.Parent = miscPage
 		local bindsCorner = Instance.new("UICorner"); bindsCorner.CornerRadius = UDim.new(0,6); bindsCorner.Parent = bindsContainer
-
 		local bindsText = Instance.new("TextLabel")
 		bindsText.Size = Cache.UDim2_new(1,-20,1,0)
 		bindsText.Position = Cache.UDim2_new(0,10,0,0)
@@ -1465,12 +1557,182 @@ Keypad0 - ESP
 Keypad3 - Health Bars]]
 		bindsText.Font = Enum.Font.Gotham
 		bindsText.TextSize = 11
-		bindsText.TextColor3 = Cache.Color3_fromRGB(200,200,210)
+		bindsText.TextColor3 = COLORS.textDim
 		bindsText.TextXAlignment = Enum.TextXAlignment.Left
 		bindsText.TextYAlignment = Enum.TextYAlignment.Top
 		bindsText.Parent = bindsContainer
 
-		-- TOGGLE FUNCTIONS
+		-- ============ DESERT RAID PAGE ============
+		createSectionHeader(desertPage, "Desert Raid")
+
+		local clickContainer = Instance.new("Frame")
+		clickContainer.Size = Cache.UDim2_new(1,0,0,140)
+		clickContainer.BackgroundColor3 = COLORS.bg2
+		clickContainer.BackgroundTransparency = 0.6
+		clickContainer.BorderSizePixel = 0
+		clickContainer.Parent = desertPage
+		local clickCorner = Instance.new("UICorner"); clickCorner.CornerRadius = UDim.new(0,6); clickCorner.Parent = clickContainer
+		local clickLayout = Instance.new("UIListLayout")
+		clickLayout.FillDirection = Enum.FillDirection.Vertical
+		clickLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		clickLayout.Padding = UDim.new(0,6)
+		clickLayout.Parent = clickContainer
+		local clickPadding = Instance.new("UIPadding"); clickPadding.PaddingTop = UDim.new(0,8); clickPadding.Parent = clickContainer
+
+		local pedestalBtn = createButton(clickContainer, "🔮 Ativar Pedestal", COLORS.warning)
+		pedestalBtn.Size = Cache.UDim2_new(0.9,0,0,30)
+		pedestalBtn.MouseButton1Click:Connect(function()
+			local cd = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Pedestal") and workspace.DesertedDesert.Pedestal:FindFirstChild("ClickDetector")
+			if cd then
+				fireclickdetector(cd, 0, 0)
+				pedestalBtn.BackgroundColor3 = COLORS.success
+				task.wait(0.3)
+				pedestalBtn.BackgroundColor3 = COLORS.warning
+			else
+				pedestalBtn.Text = "❌ Não encontrado"
+				task.wait(1)
+				pedestalBtn.Text = "🔮 Ativar Pedestal"
+			end
+		end)
+
+		local vendingBtn = createButton(clickContainer, "🏪 Ativar Vending Machine", COLORS.primaryLight)
+		vendingBtn.Size = Cache.UDim2_new(0.9,0,0,30)
+		vendingBtn.MouseButton1Click:Connect(function()
+			local cd = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("VendingMachineClickPart") and workspace.DesertedDesert.VendingMachineClickPart:FindFirstChild("ClickDetector")
+			if cd then
+				fireclickdetector(cd, 0, 0)
+				vendingBtn.BackgroundColor3 = COLORS.success
+				task.wait(0.3)
+				vendingBtn.BackgroundColor3 = COLORS.primaryLight
+			else
+				vendingBtn.Text = "❌ Não encontrado"
+				task.wait(1)
+				vendingBtn.Text = "🏪 Ativar Vending Machine"
+			end
+		end)
+
+		local dragonBtn = createButton(clickContainer, "🐉 Ativar Dragão", COLORS.danger)
+		dragonBtn.Size = Cache.UDim2_new(0.9,0,0,30)
+		dragonBtn.MouseButton1Click:Connect(function()
+			local cd = workspace:FindFirstChild("DragonBossStuff") and workspace.DragonBossStuff:FindFirstChild("ClickPart") and workspace.DragonBossStuff.ClickPart:FindFirstChild("ClickDetector")
+			if cd then
+				fireclickdetector(cd, 0, 0)
+				dragonBtn.BackgroundColor3 = COLORS.success
+				task.wait(0.3)
+				dragonBtn.BackgroundColor3 = COLORS.danger
+			else
+				dragonBtn.Text = "❌ Não encontrado"
+				task.wait(1)
+				dragonBtn.Text = "🐉 Ativar Dragão"
+			end
+		end)
+
+		local spawnSection = Instance.new("Frame")
+		spawnSection.Size = Cache.UDim2_new(1,0,0,30)
+		spawnSection.BackgroundTransparency = 1
+		spawnSection.Parent = desertPage
+		local spawnLabel = Instance.new("TextLabel")
+		spawnLabel.Size = Cache.UDim2_new(1,-20,1,0)
+		spawnLabel.Position = Cache.UDim2_new(0,10,0,0)
+		spawnLabel.BackgroundTransparency = 1
+		spawnLabel.Text = "📍 Teletransporte para Spawns"
+		spawnLabel.Font = Enum.Font.GothamBold
+		spawnLabel.TextSize = 11
+		spawnLabel.TextColor3 = COLORS.textDim
+		spawnLabel.TextXAlignment = Enum.TextXAlignment.Left
+		spawnLabel.Parent = spawnSection
+
+		local spawnRefreshBtn = createButton(desertPage, "🔄 Atualizar Spawns", COLORS.success)
+		local spawnListFrame = Instance.new("ScrollingFrame")
+		spawnListFrame.Size = Cache.UDim2_new(1,0,0,150)
+		spawnListFrame.BackgroundColor3 = COLORS.bg2
+		spawnListFrame.BackgroundTransparency = 0.6
+		spawnListFrame.BorderSizePixel = 0
+		spawnListFrame.CanvasSize = Cache.UDim2_new(0,0,0,0)
+		spawnListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		spawnListFrame.ScrollBarThickness = 3
+		spawnListFrame.Parent = desertPage
+		local spawnListLayout = Instance.new("UIListLayout")
+		spawnListLayout.Padding = UDim.new(0,4)
+		spawnListLayout.Parent = spawnListFrame
+
+		local function teleportWithNoClip(targetPos)
+			if State.isTeleporting then return end
+			Movement.enableNoClip()
+			local success = Teleport.ultraSmoothTeleport(targetPos)
+			task.wait(0.1)
+			while State.isTeleporting do task.wait(0.1) end
+			Movement.disableNoClip()
+		end
+
+		local function populateSpawnList()
+			for _,c in ipairs(spawnListFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+			local positions = {}
+			local artifactFolder = workspace:FindFirstChild("LibraryDungeon") and workspace.LibraryDungeon:FindFirstChild("ArtifactSpawns")
+			if artifactFolder then
+				for _, part in ipairs(artifactFolder:GetChildren()) do
+					if part:IsA("BasePart") then
+						table.insert(positions, { name = "ArtifactSpawn", part = part })
+					end
+				end
+			end
+			local wendigoPart = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Wendigo") and workspace.DesertedDesert.Wendigo:FindFirstChild("BossSpawnPart")
+			if wendigoPart and wendigoPart:IsA("BasePart") then
+				table.insert(positions, { name = "Wendigo Spawn", part = wendigoPart })
+			end
+			if #positions == 0 then
+				local empty = Instance.new("TextLabel")
+				empty.Size = Cache.UDim2_new(1,-10,0,30)
+				empty.BackgroundColor3 = COLORS.bg3
+				empty.BackgroundTransparency = 0.5
+				empty.Text = "   Nenhum spawn encontrado"
+				empty.Font = Enum.Font.Gotham
+				empty.TextSize = 11
+				empty.TextColor3 = COLORS.textDim
+				empty.TextXAlignment = Enum.TextXAlignment.Left
+				empty.Parent = spawnListFrame
+				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = empty
+			else
+				table.sort(positions, function(a,b)
+					if a.name == b.name then return a.part.Name < b.part.Name end
+					return a.name < b.name
+				end)
+				local index = 0
+				for _, data in ipairs(positions) do
+					index = index + 1
+					local btn = Instance.new("TextButton")
+					btn.Size = Cache.UDim2_new(1,-10,0,28)
+					btn.BackgroundColor3 = COLORS.bg3
+					btn.BackgroundTransparency = 0.5
+					local label = data.name
+					if data.name == "ArtifactSpawn" then
+						label = label .. " #" .. index
+					end
+					btn.Text = "   📍 " .. label
+					btn.Font = Enum.Font.Gotham
+					btn.TextSize = 11
+					btn.TextColor3 = COLORS.text
+					btn.TextXAlignment = Enum.TextXAlignment.Left
+					btn.BorderSizePixel = 0
+					btn.Parent = spawnListFrame
+					local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
+					btn.MouseButton1Click:Connect(function()
+						local targetPos = data.part.Position + Cache.Vector3_new(0, 2, 5)
+						task.spawn(function() teleportWithNoClip(targetPos) end)
+						btn.BackgroundColor3 = COLORS.success
+						task.wait(0.3)
+						btn.BackgroundColor3 = COLORS.bg3
+						btn.BackgroundTransparency = 0.5
+					end)
+				end
+			end
+			spawnListFrame.CanvasSize = Cache.UDim2_new(0,0,0, #positions * 32 + 10)
+		end
+
+		spawnRefreshBtn.MouseButton1Click:Connect(populateSpawnList)
+		task.spawn(populateSpawnList)
+
+		-- ============ TOGGLE FUNCTIONS ============
 		ToggleFunctions.autofarm = function(enabled)
 			State.autofarmEnabled = enabled
 			Utils.animateToggle(autofarmBg, autofarmCircle, enabled)
@@ -1540,6 +1802,20 @@ Keypad3 - Health Bars]]
 		end
 		noClipToggle.MouseButton1Click:Connect(function() ToggleFunctions.noClip(not State.noClipEnabled) end)
 
+		ToggleFunctions.fullBright = function(enabled)
+			State.fullBrightEnabled = enabled
+			Utils.animateToggle(fullBrightBg, fullBrightCircle, enabled)
+			applyFullBright(enabled)
+		end
+		fullBrightToggle.MouseButton1Click:Connect(function() ToggleFunctions.fullBright(not State.fullBrightEnabled) end)
+
+		ToggleFunctions.fpsBooster = function(enabled)
+			State.fpsBoosterEnabled = enabled
+			Utils.animateToggle(fpsBg, fpsCircle, enabled)
+			applyFPSBooster(enabled)
+		end
+		fpsToggle.MouseButton1Click:Connect(function() ToggleFunctions.fpsBooster(not State.fpsBoosterEnabled) end)
+
 		ToggleFunctions.esp = function(enabled)
 			State.espEnabled = enabled
 			Utils.animateToggle(espBg, espCircle, enabled)
@@ -1574,6 +1850,7 @@ Keypad3 - Health Bars]]
 		end
 		fovToggle.MouseButton1Click:Connect(function() ToggleFunctions.fov(not State.fovEnabled) end)
 
+		-- ============ SLIDER HANDLERS ============
 		local function handleSlider(btn, fill, label, minV, maxV, precision, callback)
 			local dragging = false
 			btn.MouseButton1Down:Connect(function() dragging = true end)
@@ -1603,6 +1880,8 @@ Keypad3 - Health Bars]]
 			espEnabled={bg=espBg, circle=espCircle}, tracersEnabled={bg=tracersBg, circle=tracersCircle},
 			healthBarsEnabled={bg=healthBarsBg, circle=healthBarsCircle}, playerESPEnabled={bg=playerESPBg, circle=playerESPCircle},
 			fovEnabled={bg=fovBg, circle=fovCircle},
+			fullBrightEnabled={bg=fullBrightBg, circle=fullBrightCircle},
+			fpsBoosterEnabled={bg=fpsBg, circle=fpsCircle},
 		}
 
 		screenGui.Destroying:Connect(function()
@@ -1610,6 +1889,8 @@ Keypad3 - Health Bars]]
 			ESP.clearAllESP(); ESP.clearAllTracers(); ESP.clearAllHealthBars(); ESP.removeFOVCircle()
 			for _,esp in pairs(State.playerESPObjects) do if esp then esp:Destroy() end end
 			Combat.stopAutoAttack()
+			if State.fullBrightEnabled then applyFullBright(false) end
+			if State.fpsBoosterEnabled then applyFPSBooster(false) end
 		end)
 
 		return { screenGui=screenGui, mainFrame=mainFrame, ToggleFunctions=ToggleFunctions, refreshToggles=function()
@@ -1645,16 +1926,16 @@ local Input = (function()
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
 
-			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
+			elseif input.KeyCode == Enum.KeyCode.KeypadOne then -- Kill Aura
 				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
+			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then -- Auto Farm
 				ToggleFunctions.autofarm(not State.autofarmEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.N then
+			elseif input.KeyCode == Enum.KeyCode.N then -- Speed
 				ToggleFunctions.speed(not State.speedEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.Y then
+			elseif input.KeyCode == Enum.KeyCode.Y then -- Infinite Jump
 				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
 
 			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
@@ -1719,7 +2000,7 @@ task.wait(0.5)
 if GUI.refreshToggles then GUI.refreshToggles() end
 
 print("═══════════════════════════════════════════════")
-print("        CYBER HUB - FFRE EDITION V4.7         ")
+print("        CYBER HUB - FFRE EDITION V4.8         ")
 print("═══════════════════════════════════════════════")
 print("  ⚔️  Combat: Auto Farm | Lock On | Kill Aura")
 print("  🚀  Movement: Speed | Infinite Jump | No Clip")
@@ -1728,7 +2009,8 @@ print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
 print("  🔥  Burst Count: ajustável (1-10)")
-print("  🔄  Auto-switch target when health ≤ 1")
+print("  🏜️  Desert Raid: ClickDetectors + Spawn TP")
+print("  💡  FullBright + FPS Booster (Misc)")
 print("═══════════════════════════════════════════════")
 print("  F1   - Toggle GUI")
 print("  KP1  - Kill Aura (Auto Attack)")
