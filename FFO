@@ -701,7 +701,7 @@ local Teleport = (function()
 end)()
 
 --//====================================================--
---//              CONFIG SYSTEM (REFEITO)              --
+--//              CONFIG SYSTEM (CORRIGIDO)             --
 --//====================================================--
 
 local ConfigManager = (function()
@@ -710,7 +710,7 @@ local ConfigManager = (function()
 	local State = Core.State
 	local Http = Services.HttpService
 
-	-- Verificação das funções de sistema de arquivos
+	-- Verifica funções de arquivo
 	local required = {
 		writefile,
 		readfile,
@@ -745,7 +745,7 @@ local ConfigManager = (function()
 		}
 	end
 
-	-- Filesystem tester (executado uma vez)
+	-- Teste de sistema de arquivos
 	local function runFilesystemTests()
 		local tests = {}
 		tests.write = pcall(function() writefile("cyberhub_test.txt", "test") end)
@@ -804,7 +804,7 @@ local ConfigManager = (function()
 		return true
 	end
 
-	-- CRUD
+	-- SAVE
 	local function saveConfig(name)
 		if not ensureFolder() then return false end
 		if name == nil or name == "" then name = "unnamed" end
@@ -831,15 +831,15 @@ local ConfigManager = (function()
 			fpsBoosterEnabled  = State.fpsBoosterEnabled,
 		}
 
-		local json, err = pcall(Http.JSONEncode, Http, data)
-		if not json then
-			warn("[CyberHub] Erro ao codificar JSON: " .. tostring(err))
+		local ok, json = pcall(Http.JSONEncode, Http, data)
+		if not ok then
+			warn("[CyberHub] Erro ao codificar JSON: " .. tostring(json))
 			return false
 		end
 
 		local path = folder .. "/" .. name .. ".json"
-		local success, writeErr = pcall(writefile, path, json)
-		if not success then
+		local writeOk, writeErr = pcall(writefile, path, json)
+		if not writeOk then
 			warn("[CyberHub] Erro ao salvar '" .. path .. "': " .. tostring(writeErr))
 			return false
 		end
@@ -847,6 +847,7 @@ local ConfigManager = (function()
 		return true
 	end
 
+	-- LOAD
 	local function loadConfig(name)
 		if not ensureFolder() then return false end
 		if name == nil or name == "" then return false end
@@ -859,17 +860,17 @@ local ConfigManager = (function()
 			return false
 		end
 
-		local content, err = pcall(readfile, path)
-		if not content then
-			warn("[CyberHub] Erro ao ler '" .. path .. "': " .. tostring(err))
+		local readOk, content = pcall(readfile, path)
+		if not readOk then
+			warn("[CyberHub] Erro ao ler '" .. path .. "': " .. tostring(content))
 			return false
 		end
 
 		local decoded
-		local ok, err = pcall(function()
+		local decodeOk, err = pcall(function()
 			decoded = Http:JSONDecode(content)
 		end)
-		if not ok then
+		if not decodeOk then
 			warn("[CyberHub] Erro ao decodificar JSON de '" .. path .. "': " .. tostring(err))
 			return false
 		end
@@ -884,7 +885,7 @@ local ConfigManager = (function()
 			end
 		end
 
-		-- Aplica efeitos visuais (funções globais definidas pelo GUI)
+		-- Aplica efeitos visuais
 		if type(applyFullBright) == "function" then
 			applyFullBright(State.fullBrightEnabled)
 		end
@@ -899,6 +900,7 @@ local ConfigManager = (function()
 		return true
 	end
 
+	-- LIST
 	local function listConfigs()
 		if not ensureFolder() then return {} end
 		local files, err = pcall(listfiles, folder)
@@ -917,6 +919,7 @@ local ConfigManager = (function()
 		return names
 	end
 
+	-- DELETE
 	local function deleteConfig(name)
 		if not ensureFolder() then return false end
 		if name == nil or name == "" then return false end
@@ -935,7 +938,7 @@ local ConfigManager = (function()
 		return saveConfig(name)
 	end
 
-	-- Autoload
+	-- AUTOLOAD
 	local autoloadFile = folder .. "/autoload.txt"
 
 	local function setAutoload(name)
