@@ -1,5 +1,5 @@
 --//====================================================--
---//           CYBER HUB - FFRE EDITION V4.7           --
+--//           CYBER HUB - FFRE EDITION V4.7           --  
 --//====================================================--
 --//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --
 --//  ESP + Tracers + Health Bars (Workspace.Alive)     --
@@ -75,7 +75,6 @@ local Core = (function()
 		currentPage        = "combat",
 		isTeleporting      = false,
 		burstCount         = 3,
-		-- Novos estados
 		fullBrightEnabled  = false,
 		fpsBoosterEnabled  = false,
 	}
@@ -702,7 +701,7 @@ local Teleport = (function()
 end)()
 
 --//====================================================--
---//              CONFIG SYSTEM (CAMINHO ABSOLUTO)      --
+--//              CONFIG SYSTEM (REFEITO)              --
 --//====================================================--
 
 local ConfigManager = (function()
@@ -711,7 +710,69 @@ local ConfigManager = (function()
 	local State = Core.State
 	local Http = Services.HttpService
 
-	-- Tenta obter o diretório do executor (Potassium)
+	-- Verificação das funções de sistema de arquivos
+	local required = {
+		writefile,
+		readfile,
+		isfile,
+		isfolder,
+		makefolder,
+		listfiles,
+		delfile,
+		appendfile
+	}
+
+	local missing = {}
+	for i, f in ipairs(required) do
+		if type(f) ~= "function" then
+			table.insert(missing, i)
+		end
+	end
+
+	if #missing > 0 then
+		warn("[CyberHub] Funções de arquivo ausentes: " .. table.concat(missing, ", "))
+		return {
+			saveConfig      = function() return false end,
+			loadConfig      = function() return false end,
+			listConfigs     = function() return {} end,
+			deleteConfig    = function() return false end,
+			overwriteConfig = function() return false end,
+			setAutoload     = function() end,
+			getAutoload     = function() return nil end,
+			loadAutoload    = function() end,
+			refreshConfigs  = function() return {} end,
+			debugInfo       = function() end,
+		}
+	end
+
+	-- Filesystem tester (executado uma vez)
+	local function runFilesystemTests()
+		local tests = {}
+		tests.write = pcall(function() writefile("cyberhub_test.txt", "test") end)
+		tests.read = pcall(function() return readfile("cyberhub_test.txt") end)
+		tests.isfile = pcall(function() return isfile("cyberhub_test.txt") end)
+		tests.makefolder = pcall(function() makefolder("cyberhub_test_folder") end)
+		tests.isfolder = pcall(function() return isfolder("cyberhub_test_folder") end)
+		tests.listfiles = pcall(function() return listfiles(".") end)
+		tests.delete = pcall(function() delfile("cyberhub_test.txt") end)
+
+		local allOk = true
+		for name, result in pairs(tests) do
+			if not result then
+				allOk = false
+				warn("[CyberHub] Teste falhou: " .. name)
+			end
+		end
+		if allOk then
+			print("[CyberHub] Todos os testes de sistema de arquivos OK.")
+		else
+			warn("[CyberHub] Alguns testes falharam. Configurações podem não funcionar.")
+		end
+		return tests
+	end
+	task.spawn(runFilesystemTests)
+
+	-- Caminho da pasta
 	local function getExecutorDirectory()
 		if getexecutordirectory then
 			local success, dir = pcall(getexecutordirectory)
@@ -725,43 +786,17 @@ local ConfigManager = (function()
 	local baseFolder = getExecutorDirectory()
 	local folder
 	if baseFolder then
-		-- Se tiver diretório do executor, usa workspace/CyberHubConfigs
 		folder = baseFolder .. "/workspace/CyberHubConfigs"
-		-- Alternativa: se o workspace já for o diretório raiz, use apenas "CyberHubConfigs"
-		-- Mas para garantir, tenta criar a pasta no caminho absoluto.
 	else
-		-- Fallback: caminho relativo (pode não funcionar)
 		folder = "CyberHubConfigs"
 	end
-
 	print("[CyberHub] Pasta de configurações: " .. folder)
 
-	-- Verifica se as funções de arquivo estão disponíveis
-	local function hasFileFunctions()
-		return type(writefile) == "function" and type(readfile) == "function" and type(listfiles) == "function"
-	end
-
-	if not hasFileFunctions() then
-		warn("[CyberHub] Funções de arquivo não disponíveis. Configurações não serão salvas.")
-		return {
-			saveConfig = function() return false end,
-			loadConfig = function() return false end,
-			listConfigs = function() return {} end,
-			deleteConfig = function() return false end,
-			overwriteConfig = function() return false end,
-			setAutoload = function() end,
-			getAutoload = function() return nil end,
-			loadAutoload = function() end,
-			refreshConfigs = function() return {} end,
-		}
-	end
-
-	-- Garante que a pasta existe
 	local function ensureFolder()
 		if not isfolder(folder) then
 			local success, err = pcall(makefolder, folder)
 			if not success then
-				warn("[CyberHub] Não foi possível criar a pasta: " .. folder .. " - " .. tostring(err))
+				warn("[CyberHub] Erro ao criar pasta '" .. folder .. "': " .. tostring(err))
 				return false
 			end
 			print("[CyberHub] Pasta criada: " .. folder)
@@ -769,7 +804,7 @@ local ConfigManager = (function()
 		return true
 	end
 
-	-- Salva uma configuração
+	-- CRUD
 	local function saveConfig(name)
 		if not ensureFolder() then return false end
 		if name == nil or name == "" then name = "unnamed" end
@@ -796,12 +831,13 @@ local ConfigManager = (function()
 			fpsBoosterEnabled  = State.fpsBoosterEnabled,
 		}
 
-		local path = folder .. "/" .. name .. ".json"
 		local json, err = pcall(Http.JSONEncode, Http, data)
 		if not json then
 			warn("[CyberHub] Erro ao codificar JSON: " .. tostring(err))
 			return false
 		end
+
+		local path = folder .. "/" .. name .. ".json"
 		local success, writeErr = pcall(writefile, path, json)
 		if not success then
 			warn("[CyberHub] Erro ao salvar '" .. path .. "': " .. tostring(writeErr))
@@ -811,7 +847,6 @@ local ConfigManager = (function()
 		return true
 	end
 
-	-- Carrega uma configuração
 	local function loadConfig(name)
 		if not ensureFolder() then return false end
 		if name == nil or name == "" then return false end
@@ -830,9 +865,16 @@ local ConfigManager = (function()
 			return false
 		end
 
-		local decoded = Http:JSONDecode(content)
+		local decoded
+		local ok, err = pcall(function()
+			decoded = Http:JSONDecode(content)
+		end)
+		if not ok then
+			warn("[CyberHub] Erro ao decodificar JSON de '" .. path .. "': " .. tostring(err))
+			return false
+		end
 		if not decoded then
-			warn("[CyberHub] JSON inválido: " .. path)
+			warn("[CyberHub] JSON inválido (decodificado como nil): " .. path)
 			return false
 		end
 
@@ -842,10 +884,13 @@ local ConfigManager = (function()
 			end
 		end
 
-		-- Aplica efeitos visuais (FullBright, FPS Booster)
-		if State.fullBrightEnabled then applyFullBright(true) else applyFullBright(false) end
-		if State.fpsBoosterEnabled then applyFPSBooster(true) else applyFPSBooster(false) end
-
+		-- Aplica efeitos visuais (funções globais definidas pelo GUI)
+		if type(applyFullBright) == "function" then
+			applyFullBright(State.fullBrightEnabled)
+		end
+		if type(applyFPSBooster) == "function" then
+			applyFPSBooster(State.fpsBoosterEnabled)
+		end
 		if GUI and GUI.refreshToggles then
 			GUI.refreshToggles()
 		end
@@ -854,7 +899,6 @@ local ConfigManager = (function()
 		return true
 	end
 
-	-- Lista todas as configurações disponíveis
 	local function listConfigs()
 		if not ensureFolder() then return {} end
 		local files, err = pcall(listfiles, folder)
@@ -873,7 +917,6 @@ local ConfigManager = (function()
 		return names
 	end
 
-	-- Deleta uma configuração
 	local function deleteConfig(name)
 		if not ensureFolder() then return false end
 		if name == nil or name == "" then return false end
@@ -906,9 +949,9 @@ local ConfigManager = (function()
 
 	local function getAutoload()
 		if isfile(autoloadFile) then
-			local content, err = pcall(readfile, autoloadFile)
-			if content then
-				return content:gsub("%s+", "")
+			local ok, data = pcall(readfile, autoloadFile)
+			if ok and data then
+				return data:gsub("%s+", "")
 			end
 		end
 		return nil
@@ -926,14 +969,12 @@ local ConfigManager = (function()
 		return listConfigs()
 	end
 
-	-- Função de depuração: exibe o caminho atual e lista os arquivos
 	local function debugInfo()
 		print("[CyberHub] Caminho atual: " .. folder)
 		local files = listConfigs()
 		print("[CyberHub] Configurações encontradas: " .. table.concat(files, ", "))
 	end
 
-	-- Chama debugInfo na inicialização
 	task.spawn(debugInfo)
 
 	return {
@@ -949,6 +990,7 @@ local ConfigManager = (function()
 		debugInfo       = debugInfo,
 	}
 end)()
+
 --//====================================================--
 --//                   GUI SYSTEM                       --
 --//====================================================--
@@ -965,7 +1007,7 @@ local GUI = (function()
 	local resizeStartPos, resizeStartSize
 	local selectedProfileBtn = nil
 
-	-- Armazenar valores originais para FullBright
+	-- Armazenar valores originais para FullBright e FPS Booster
 	local originalLighting = {
 		Brightness = nil,
 		Ambient = nil,
@@ -975,10 +1017,10 @@ local GUI = (function()
 	}
 	local originalQuality = nil
 
+	-- Funções auxiliares (serão exportadas para o ConfigManager)
 	local function applyFullBright(enable)
 		local lighting = game:GetService("Lighting")
 		if enable then
-			-- Guarda originais
 			if originalLighting.Brightness == nil then
 				originalLighting.Brightness = lighting.Brightness
 				originalLighting.Ambient = lighting.Ambient
@@ -986,14 +1028,12 @@ local GUI = (function()
 				originalLighting.Technology = lighting.Technology
 				originalLighting.ClockTime = lighting.ClockTime
 			end
-			-- Aplica full bright
 			lighting.Brightness = 2
 			lighting.Ambient = Color3.new(1,1,1)
 			lighting.OutdoorAmbient = Color3.new(1,1,1)
 			lighting.Technology = Enum.Technology.Legacy
 			lighting.ClockTime = 12
 		else
-			-- Restaura
 			if originalLighting.Brightness ~= nil then
 				lighting.Brightness = originalLighting.Brightness
 				lighting.Ambient = originalLighting.Ambient
@@ -1011,16 +1051,20 @@ local GUI = (function()
 			if originalQuality == nil then
 				originalQuality = rendering.QualityLevel
 			end
-			rendering.QualityLevel = 1 -- Mínimo
+			rendering.QualityLevel = 1
 			workspace.GlobalShadows = false
 		else
 			if originalQuality ~= nil then
 				rendering.QualityLevel = originalQuality
 				originalQuality = nil
 			end
-			workspace.GlobalShadows = true -- ou restaura o valor padrão
+			workspace.GlobalShadows = true
 		end
 	end
+
+	-- Exporta funções para serem usadas pelo ConfigManager
+	_G.applyFullBright = applyFullBright
+	_G.applyFPSBooster = applyFPSBooster
 
 	local function makeResizable(frame)
 		local gripSize = 8
@@ -1470,197 +1514,192 @@ local GUI = (function()
 		refreshBtn.MouseButton1Click:Connect(populateNPCList)
 		task.spawn(populateNPCList)
 
-		-- CONFIG PAGE
-createSectionHeader(configPage, "Profile Manager")
+		-- CONFIG PAGE (totalmente reformulada)
+		createSectionHeader(configPage, "Profile Manager")
 
-local configInfo = Instance.new("Frame")
-configInfo.Size = UDim2.new(1,0,0,45)
-configInfo.BackgroundColor3 = Color3.fromRGB(100,180,255)
-configInfo.BackgroundTransparency = 0.9
-configInfo.BorderSizePixel = 0
-configInfo.Parent = configPage
-local configCorner = Instance.new("UICorner"); configCorner.CornerRadius = UDim.new(0,6); configCorner.Parent = configInfo
-local configLabel = Instance.new("TextLabel")
-configLabel.Size = UDim2.new(1,-20,1,0)
-configLabel.Position = UDim2.new(0,10,0,0)
-configLabel.BackgroundTransparency = 1
-configLabel.Text = "💾 Save/Load all hub settings\nProfiles stored in CyberHubConfigs folder"
-configLabel.Font = Enum.Font.Gotham
-configLabel.TextSize = 10
-configLabel.TextColor3 = Color3.new(1,1,1)
-configLabel.TextWrapped = true
-configLabel.TextXAlignment = Enum.TextXAlignment.Left
-configLabel.Parent = configInfo
+		local configInfo = Instance.new("Frame")
+		configInfo.Size = UDim2.new(1,0,0,45)
+		configInfo.BackgroundColor3 = Color3.fromRGB(100,180,255)
+		configInfo.BackgroundTransparency = 0.9
+		configInfo.BorderSizePixel = 0
+		configInfo.Parent = configPage
+		local configCorner = Instance.new("UICorner"); configCorner.CornerRadius = UDim.new(0,6); configCorner.Parent = configInfo
+		local configLabel = Instance.new("TextLabel")
+		configLabel.Size = UDim2.new(1,-20,1,0)
+		configLabel.Position = UDim2.new(0,10,0,0)
+		configLabel.BackgroundTransparency = 1
+		configLabel.Text = "💾 Save/Load all hub settings\nProfiles stored in CyberHubConfigs folder"
+		configLabel.Font = Enum.Font.Gotham
+		configLabel.TextSize = 10
+		configLabel.TextColor3 = Color3.new(1,1,1)
+		configLabel.TextWrapped = true
+		configLabel.TextXAlignment = Enum.TextXAlignment.Left
+		configLabel.Parent = configInfo
 
-local nameContainer = Instance.new("Frame")
-nameContainer.Size = UDim2.new(1,0,0,45)
-nameContainer.BackgroundColor3 = Color3.fromRGB(18,18,25)
-nameContainer.BorderSizePixel = 0
-nameContainer.Parent = configPage
-local nameCorner = Instance.new("UICorner"); nameCorner.CornerRadius = UDim.new(0,6); nameCorner.Parent = nameContainer
-local nameLabel = Instance.new("TextLabel")
-nameLabel.Size = UDim2.new(0,80,1,0)
-nameLabel.Position = UDim2.new(0,10,0,0)
-nameLabel.BackgroundTransparency = 1
-nameLabel.Text = "Profile:"
-nameLabel.Font = Enum.Font.GothamBold
-nameLabel.TextSize = 11
-nameLabel.TextColor3 = Color3.new(1,1,1)
-nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-nameLabel.Parent = nameContainer
-local nameBox = Instance.new("TextBox")
-nameBox.Size = UDim2.new(0,180,0,28)
-nameBox.Position = UDim2.new(0,80,0.5,-14)
-nameBox.BackgroundColor3 = Color3.fromRGB(30,30,42)
-nameBox.Text = "default"
-nameBox.Font = Enum.Font.Gotham
-nameBox.TextSize = 11
-nameBox.TextColor3 = Color3.new(1,1,1)
-nameBox.BorderSizePixel = 0
-nameBox.Parent = nameContainer
-local nameBoxCorner = Instance.new("UICorner"); nameBoxCorner.CornerRadius = UDim.new(0,4); nameBoxCorner.Parent = nameBox
+		local nameContainer = Instance.new("Frame")
+		nameContainer.Size = UDim2.new(1,0,0,45)
+		nameContainer.BackgroundColor3 = Color3.fromRGB(18,18,25)
+		nameContainer.BorderSizePixel = 0
+		nameContainer.Parent = configPage
+		local nameCorner = Instance.new("UICorner"); nameCorner.CornerRadius = UDim.new(0,6); nameCorner.Parent = nameContainer
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(0,80,1,0)
+		nameLabel.Position = UDim2.new(0,10,0,0)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = "Profile:"
+		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.TextSize = 11
+		nameLabel.TextColor3 = Color3.new(1,1,1)
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = nameContainer
+		local nameBox = Instance.new("TextBox")
+		nameBox.Size = UDim2.new(0,180,0,28)
+		nameBox.Position = UDim2.new(0,80,0.5,-14)
+		nameBox.BackgroundColor3 = Color3.fromRGB(30,30,42)
+		nameBox.Text = "default"
+		nameBox.Font = Enum.Font.Gotham
+		nameBox.TextSize = 11
+		nameBox.TextColor3 = Color3.new(1,1,1)
+		nameBox.BorderSizePixel = 0
+		nameBox.Parent = nameContainer
+		local nameBoxCorner = Instance.new("UICorner"); nameBoxCorner.CornerRadius = UDim.new(0,4); nameBoxCorner.Parent = nameBox
 
-local btnContainer = Instance.new("Frame")
-btnContainer.Size = UDim2.new(1,0,0,45)
-btnContainer.BackgroundTransparency = 1
-btnContainer.Parent = configPage
-local btnLayout = Instance.new("UIListLayout")
-btnLayout.FillDirection = Enum.FillDirection.Horizontal
-btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-btnLayout.Padding = UDim.new(0,4)
-btnLayout.Parent = btnContainer
+		local btnContainer = Instance.new("Frame")
+		btnContainer.Size = UDim2.new(1,0,0,45)
+		btnContainer.BackgroundTransparency = 1
+		btnContainer.Parent = configPage
+		local btnLayout = Instance.new("UIListLayout")
+		btnLayout.FillDirection = Enum.FillDirection.Horizontal
+		btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		btnLayout.Padding = UDim.new(0,4)
+		btnLayout.Parent = btnContainer
 
-local saveBtn = createButton(btnContainer, "Save", Color3.fromRGB(80,200,120))
-local loadBtn = createButton(btnContainer, "Load", Color3.fromRGB(100,180,255))
-local overwriteBtn = createButton(btnContainer, "Overwrite", Color3.fromRGB(255,180,80))
-local deleteBtn = createButton(btnContainer, "Delete", Color3.fromRGB(220,80,80))
-local autoloadBtn = createButton(btnContainer, "Autoload", Color3.fromRGB(255,180,80))
-local refreshBtn = createButton(btnContainer, "⟳ Refresh", Color3.fromRGB(150,150,200))  -- NOVO BOTÃO
+		local saveBtn = createButton(btnContainer, "Save", Color3.fromRGB(80,200,120))
+		local loadBtn = createButton(btnContainer, "Load", Color3.fromRGB(100,180,255))
+		local overwriteBtn = createButton(btnContainer, "Overwrite", Color3.fromRGB(255,180,80))
+		local deleteBtn = createButton(btnContainer, "Delete", Color3.fromRGB(220,80,80))
+		local autoloadBtn = createButton(btnContainer, "Autoload", Color3.fromRGB(255,180,80))
+		local refreshBtn2 = createButton(btnContainer, "⟳ Refresh", Color3.fromRGB(150,150,200))
 
-saveBtn.Size = UDim2.new(0,60,0,30)
-loadBtn.Size = UDim2.new(0,60,0,30)
-overwriteBtn.Size = UDim2.new(0,80,0,30)
-deleteBtn.Size = UDim2.new(0,60,0,30)
-autoloadBtn.Size = UDim2.new(0,75,0,30)
-refreshBtn.Size = UDim2.new(0,75,0,30)
+		saveBtn.Size = UDim2.new(0,60,0,30)
+		loadBtn.Size = UDim2.new(0,60,0,30)
+		overwriteBtn.Size = UDim2.new(0,80,0,30)
+		deleteBtn.Size = UDim2.new(0,60,0,30)
+		autoloadBtn.Size = UDim2.new(0,75,0,30)
+		refreshBtn2.Size = UDim2.new(0,75,0,30)
 
-local profileList = Instance.new("ScrollingFrame")
-profileList.Size = UDim2.new(1,0,0,140)
-profileList.BackgroundColor3 = Color3.fromRGB(18,18,25)
-profileList.BorderSizePixel = 0
-profileList.CanvasSize = UDim2.new(0,0,0,0)
-profileList.AutomaticCanvasSize = Enum.AutomaticSize.Y
-profileList.ScrollBarThickness = 3
-profileList.Parent = configPage
-local profileListLayout = Instance.new("UIListLayout")
-profileListLayout.Padding = UDim.new(0,4)
-profileListLayout.Parent = profileList
+		local profileList = Instance.new("ScrollingFrame")
+		profileList.Size = UDim2.new(1,0,0,140)
+		profileList.BackgroundColor3 = Color3.fromRGB(18,18,25)
+		profileList.BorderSizePixel = 0
+		profileList.CanvasSize = UDim2.new(0,0,0,0)
+		profileList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		profileList.ScrollBarThickness = 3
+		profileList.Parent = configPage
+		local profileListLayout = Instance.new("UIListLayout")
+		profileListLayout.Padding = UDim.new(0,4)
+		profileListLayout.Parent = profileList
 
--- Função que popula a lista (refreshes)
-local function refreshProfileList(selectedName)
-	for _,c in ipairs(profileList:GetChildren()) do
-		if c:IsA("TextButton") then c:Destroy() end
-	end
-	local names = ConfigManager.listConfigs() -- agora com tratamento de erro
-	for _,name in ipairs(names) do
-		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(1,-10,0,28)
-		btn.BackgroundColor3 = (selectedName == name) and Color3.fromRGB(100,180,255) or Color3.fromRGB(25,25,35)
-		btn.Text = "   📄 "..name
-		btn.Font = Enum.Font.Gotham
-		btn.TextSize = 11
-		btn.TextColor3 = (selectedName == name) and Color3.new(1,1,1) or Color3.fromRGB(200,200,210)
-		btn.TextXAlignment = Enum.TextXAlignment.Left
-		btn.BorderSizePixel = 0
-		btn.Parent = profileList
-		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
-		btn.MouseButton1Click:Connect(function()
-			nameBox.Text = name
-			refreshProfileList(name)
+		local function refreshProfileList(selectedName)
+			for _,c in ipairs(profileList:GetChildren()) do
+				if c:IsA("TextButton") then c:Destroy() end
+			end
+			local names = ConfigManager.listConfigs()
+			if type(names) ~= "table" then names = {} end
+			for _,name in ipairs(names) do
+				local btn = Instance.new("TextButton")
+				btn.Size = UDim2.new(1,-10,0,28)
+				btn.BackgroundColor3 = (selectedName == name) and Color3.fromRGB(100,180,255) or Color3.fromRGB(25,25,35)
+				btn.Text = "   📄 "..name
+				btn.Font = Enum.Font.Gotham
+				btn.TextSize = 11
+				btn.TextColor3 = (selectedName == name) and Color3.new(1,1,1) or Color3.fromRGB(200,200,210)
+				btn.TextXAlignment = Enum.TextXAlignment.Left
+				btn.BorderSizePixel = 0
+				btn.Parent = profileList
+				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
+				btn.MouseButton1Click:Connect(function()
+					nameBox.Text = name
+					refreshProfileList(name)
+				end)
+			end
+			profileList.CanvasSize = UDim2.new(0,0,0, #names * 32 + 10)
+		end
+
+		saveBtn.MouseButton1Click:Connect(function()
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then n = "unnamed" end
+			if ConfigManager.saveConfig(n) then
+				refreshProfileList(n)
+			end
 		end)
-	end
-	profileList.CanvasSize = UDim2.new(0,0,0, #names * 32 + 10)
-end
 
--- Conecta os botões
-saveBtn.MouseButton1Click:Connect(function()
-	local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
-	ConfigManager.saveConfig(n)
-	refreshProfileList(n)
-end)
+		loadBtn.MouseButton1Click:Connect(function()
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then return end
+			if ConfigManager.loadConfig(n) then
+				refreshProfileList(n)
+				if GUI.refreshToggles then GUI.refreshToggles() end
+				-- Atualiza sliders
+				burstLabel.Text = tostring(State.burstCount)
+				burstFill.Size = UDim2.new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
+				distFill.Size = UDim2.new((State.autofarmDistance - distMin)/(distMax - distMin),0,1,0)
+				distLabel.Text = tostring(State.autofarmDistance)
+				speedFill.Size = UDim2.new((State.speedValue - speedMin)/(speedMax - speedMin),0,1,0)
+				speedValLabel.Text = tostring(State.speedValue)
+				updateModeVisuals()
+			end
+		end)
 
-loadBtn.MouseButton1Click:Connect(function()
-	local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
-	ConfigManager.loadConfig(n)
-	refreshProfileList(n)
-	-- Atualiza a interface visual (toggles, sliders)
-	if GUI.refreshToggles then GUI.refreshToggles() end
-	-- Atualiza o slider de burst
-	burstLabel.Text = tostring(State.burstCount)
-	burstFill.Size = UDim2.new((State.burstCount - burstMin)/(burstMax - burstMin),0,1,0)
-	-- Atualiza o slider de distância
-	distFill.Size = UDim2.new((State.autofarmDistance - distMin)/(distMax - distMin),0,1,0)
-	distLabel.Text = tostring(State.autofarmDistance)
-	-- Atualiza o slider de velocidade
-	speedFill.Size = UDim2.new((State.speedValue - speedMin)/(speedMax - speedMin),0,1,0)
-	speedValLabel.Text = tostring(State.speedValue)
-	-- Atualiza o modo (Behind/Above)
-	updateModeVisuals()
-end)
+		overwriteBtn.MouseButton1Click:Connect(function()
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then n = "unnamed" end
+			if ConfigManager.overwriteConfig(n) then
+				refreshProfileList(n)
+			end
+		end)
 
-overwriteBtn.MouseButton1Click:Connect(function()
-	local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
-	ConfigManager.overwriteConfig(n)
-	refreshProfileList(n)
-end)
+		deleteBtn.MouseButton1Click:Connect(function()
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then return end
+			if ConfigManager.deleteConfig(n) then
+				refreshProfileList()
+				nameBox.Text = ""
+			end
+		end)
 
-deleteBtn.MouseButton1Click:Connect(function()
-	local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
-	ConfigManager.deleteConfig(n)
-	refreshProfileList()
-	nameBox.Text = ""
-end)
+		autoloadBtn.MouseButton1Click:Connect(function()
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n == "" then return end
+			ConfigManager.setAutoload(n)
+			autoloadBtn.Text = "✓ Set"
+			task.wait(0.5)
+			autoloadBtn.Text = "Autoload"
+		end)
 
-autoloadBtn.MouseButton1Click:Connect(function()
-	local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
-	ConfigManager.setAutoload(n)
-	-- Feedback visual
-	autoloadBtn.Text = "✓ Set"
-	task.wait(0.5)
-	autoloadBtn.Text = "Autoload"
-end)
+		refreshBtn2.MouseButton1Click:Connect(function()
+			refreshProfileList(nameBox.Text)
+			refreshBtn2.Text = "✓"
+			task.wait(0.3)
+			refreshBtn2.Text = "⟳ Refresh"
+		end)
 
--- NOVO: Botão Refresh
-refreshBtn.MouseButton1Click:Connect(function()
-	refreshProfileList(nameBox.Text)
-	-- Feedback
-	refreshBtn.Text = "✓"
-	task.wait(0.3)
-	refreshBtn.Text = "⟳ Refresh"
-end)
-
--- Popula a lista inicialmente
-refreshProfileList()
+		refreshProfileList()
 
 		-- MISC PAGE
 		createSectionHeader(miscPage, "Misc")
 		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
 
-		-- NOVOS TOGGLES: FullBright e FPS Booster
+		-- FullBright e FPS Booster
 		local _, fullBrightToggle, fullBrightBg, fullBrightCircle = createToggle(miscPage, "FullBright", "Ilumina todo o ambiente", State.fullBrightEnabled)
 		local _, fpsToggle, fpsBg, fpsCircle = createToggle(miscPage, "FPS Booster", "Reduz qualidade gráfica para melhor desempenho", State.fpsBoosterEnabled)
 
 		createSectionHeader(miscPage, "Keybinds")
 		local bindsContainer = Instance.new("Frame")
-		bindsContainer.Size = Cache.UDim2_new(1,0,0,100)
-		bindsContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		bindsContainer.Size = UDim2.new(1,0,0,100)
+		bindsContainer.BackgroundColor3 = Color3.fromRGB(18,18,25)
 		bindsContainer.BorderSizePixel = 0
 		bindsContainer.Parent = miscPage
 		local bindsCorner = Instance.new("UICorner"); bindsCorner.CornerRadius = UDim.new(0,6); bindsCorner.Parent = bindsContainer
 
 		local bindsText = Instance.new("TextLabel")
-		bindsText.Size = Cache.UDim2_new(1,-20,1,0)
-		bindsText.Position = Cache.UDim2_new(0,10,0,0)
+		bindsText.Size = UDim2.new(1,-20,1,0)
+		bindsText.Position = UDim2.new(0,10,0,0)
 		bindsText.BackgroundTransparency = 1
 		bindsText.Text = [[F1   - Toggle GUI
 Keypad1 - Kill Aura (Auto Attack)
@@ -1671,20 +1710,17 @@ Keypad0 - ESP
 Keypad3 - Health Bars]]
 		bindsText.Font = Enum.Font.Gotham
 		bindsText.TextSize = 11
-		bindsText.TextColor3 = Cache.Color3_fromRGB(200,200,210)
+		bindsText.TextColor3 = Color3.fromRGB(200,200,210)
 		bindsText.TextXAlignment = Enum.TextXAlignment.Left
 		bindsText.TextYAlignment = Enum.TextYAlignment.Top
 		bindsText.Parent = bindsContainer
 
-		-- ===================================================== --
-		--              DESERT RAID PAGE (REFEITA)               --
-		-- ===================================================== --
+		-- DESERT RAID PAGE
 		createSectionHeader(desertPage, "Desert Raid")
 
-		-- Container para os botões de ClickDetector (vertical)
 		local clickContainer = Instance.new("Frame")
-		clickContainer.Size = Cache.UDim2_new(1,0,0,140)
-		clickContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		clickContainer.Size = UDim2.new(1,0,0,140)
+		clickContainer.BackgroundColor3 = Color3.fromRGB(18,18,25)
 		clickContainer.BorderSizePixel = 0
 		clickContainer.Parent = desertPage
 		local clickCorner = Instance.new("UICorner"); clickCorner.CornerRadius = UDim.new(0,6); clickCorner.Parent = clickContainer
@@ -1695,16 +1731,15 @@ Keypad3 - Health Bars]]
 		clickLayout.Parent = clickContainer
 		local clickPadding = Instance.new("UIPadding"); clickPadding.PaddingTop = UDim.new(0,8); clickPadding.Parent = clickContainer
 
-		-- Botão Pedestal
-		local pedestalBtn = createButton(clickContainer, "🔮 Ativar Pedestal", Cache.Color3_fromRGB(200,180,80))
-		pedestalBtn.Size = Cache.UDim2_new(0.9,0,0,30)
+		local pedestalBtn = createButton(clickContainer, "🔮 Ativar Pedestal", Color3.fromRGB(200,180,80))
+		pedestalBtn.Size = UDim2.new(0.9,0,0,30)
 		pedestalBtn.MouseButton1Click:Connect(function()
 			local cd = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Pedestal") and workspace.DesertedDesert.Pedestal:FindFirstChild("ClickDetector")
 			if cd then
 				fireclickdetector(cd, 0, 0)
-				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				pedestalBtn.BackgroundColor3 = Color3.fromRGB(80,200,120)
 				task.wait(0.3)
-				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,180,80)
+				pedestalBtn.BackgroundColor3 = Color3.fromRGB(200,180,80)
 			else
 				pedestalBtn.Text = "❌ Não encontrado"
 				task.wait(1)
@@ -1712,16 +1747,15 @@ Keypad3 - Health Bars]]
 			end
 		end)
 
-		-- Botão Vending Machine
-		local vendingBtn = createButton(clickContainer, "🏪 Ativar Vending Machine", Cache.Color3_fromRGB(80,180,200))
-		vendingBtn.Size = Cache.UDim2_new(0.9,0,0,30)
+		local vendingBtn = createButton(clickContainer, "🏪 Ativar Vending Machine", Color3.fromRGB(80,180,200))
+		vendingBtn.Size = UDim2.new(0.9,0,0,30)
 		vendingBtn.MouseButton1Click:Connect(function()
 			local cd = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("VendingMachineClickPart") and workspace.DesertedDesert.VendingMachineClickPart:FindFirstChild("ClickDetector")
 			if cd then
 				fireclickdetector(cd, 0, 0)
-				vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				vendingBtn.BackgroundColor3 = Color3.fromRGB(80,200,120)
 				task.wait(0.3)
-				vendingBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,180,200)
+				vendingBtn.BackgroundColor3 = Color3.fromRGB(80,180,200)
 			else
 				vendingBtn.Text = "❌ Não encontrado"
 				task.wait(1)
@@ -1729,16 +1763,15 @@ Keypad3 - Health Bars]]
 			end
 		end)
 
-		-- Botão Dragão
-		local dragonBtn = createButton(clickContainer, "🐉 Ativar Dragão", Cache.Color3_fromRGB(200,80,80))
-		dragonBtn.Size = Cache.UDim2_new(0.9,0,0,30)
+		local dragonBtn = createButton(clickContainer, "🐉 Ativar Dragão", Color3.fromRGB(200,80,80))
+		dragonBtn.Size = UDim2.new(0.9,0,0,30)
 		dragonBtn.MouseButton1Click:Connect(function()
 			local cd = workspace:FindFirstChild("DragonBossStuff") and workspace.DragonBossStuff:FindFirstChild("ClickPart") and workspace.DragonBossStuff.ClickPart:FindFirstChild("ClickDetector")
 			if cd then
 				fireclickdetector(cd, 0, 0)
-				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				dragonBtn.BackgroundColor3 = Color3.fromRGB(80,200,120)
 				task.wait(0.3)
-				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,80,80)
+				dragonBtn.BackgroundColor3 = Color3.fromRGB(200,80,80)
 			else
 				dragonBtn.Text = "❌ Não encontrado"
 				task.wait(1)
@@ -1746,28 +1779,27 @@ Keypad3 - Health Bars]]
 			end
 		end)
 
-		-- Seção de teletransporte para spawns
 		local spawnSection = Instance.new("Frame")
-		spawnSection.Size = Cache.UDim2_new(1,0,0,30)
+		spawnSection.Size = UDim2.new(1,0,0,30)
 		spawnSection.BackgroundTransparency = 1
 		spawnSection.Parent = desertPage
 		local spawnLabel = Instance.new("TextLabel")
-		spawnLabel.Size = Cache.UDim2_new(1,-20,1,0)
-		spawnLabel.Position = Cache.UDim2_new(0,10,0,0)
+		spawnLabel.Size = UDim2.new(1,-20,1,0)
+		spawnLabel.Position = UDim2.new(0,10,0,0)
 		spawnLabel.BackgroundTransparency = 1
 		spawnLabel.Text = "📍 Teletransporte para Spawns"
 		spawnLabel.Font = Enum.Font.GothamBold
 		spawnLabel.TextSize = 11
-		spawnLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		spawnLabel.TextColor3 = Color3.fromRGB(180,180,200)
 		spawnLabel.TextXAlignment = Enum.TextXAlignment.Left
 		spawnLabel.Parent = spawnSection
 
-		local spawnRefreshBtn = createButton(desertPage, "🔄 Atualizar Spawns", Cache.Color3_fromRGB(80,200,120))
+		local spawnRefreshBtn = createButton(desertPage, "🔄 Atualizar Spawns", Color3.fromRGB(80,200,120))
 		local spawnListFrame = Instance.new("ScrollingFrame")
-		spawnListFrame.Size = Cache.UDim2_new(1,0,0,150)
-		spawnListFrame.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		spawnListFrame.Size = UDim2.new(1,0,0,150)
+		spawnListFrame.BackgroundColor3 = Color3.fromRGB(18,18,25)
 		spawnListFrame.BorderSizePixel = 0
-		spawnListFrame.CanvasSize = Cache.UDim2_new(0,0,0,0)
+		spawnListFrame.CanvasSize = UDim2.new(0,0,0,0)
 		spawnListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		spawnListFrame.ScrollBarThickness = 3
 		spawnListFrame.Parent = desertPage
@@ -1775,27 +1807,19 @@ Keypad3 - Health Bars]]
 		spawnListLayout.Padding = UDim.new(0,4)
 		spawnListLayout.Parent = spawnListFrame
 
-		-- Função para teleportar com NoClip automático
 		local function teleportWithNoClip(targetPos)
 			if State.isTeleporting then return end
-			-- Ativa NoClip
 			Movement.enableNoClip()
-			-- Inicia teleporte
 			local success = Teleport.ultraSmoothTeleport(targetPos)
-			-- Quando terminar (ou falhar), desativa NoClip
 			task.wait(0.1)
-			while State.isTeleporting do
-				task.wait(0.1)
-			end
+			while State.isTeleporting do task.wait(0.1) end
 			Movement.disableNoClip()
 		end
 
 		local function populateSpawnList()
 			for _,c in ipairs(spawnListFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
-
 			local positions = {}
 
-			-- ArtifactSpawns (9 Parts)
 			local artifactFolder = workspace:FindFirstChild("LibraryDungeon") and workspace.LibraryDungeon:FindFirstChild("ArtifactSpawns")
 			if artifactFolder then
 				for _, part in ipairs(artifactFolder:GetChildren()) do
@@ -1805,7 +1829,6 @@ Keypad3 - Health Bars]]
 				end
 			end
 
-			-- Wendigo BossSpawnPart (caminho fixo)
 			local wendigoPart = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Wendigo") and workspace.DesertedDesert.Wendigo:FindFirstChild("BossSpawnPart")
 			if wendigoPart and wendigoPart:IsA("BasePart") then
 				table.insert(positions, { name = "Wendigo Spawn", part = wendigoPart })
@@ -1813,12 +1836,12 @@ Keypad3 - Health Bars]]
 
 			if #positions == 0 then
 				local empty = Instance.new("TextLabel")
-				empty.Size = Cache.UDim2_new(1,-10,0,30)
-				empty.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+				empty.Size = UDim2.new(1,-10,0,30)
+				empty.BackgroundColor3 = Color3.fromRGB(25,25,35)
 				empty.Text = "   Nenhum spawn encontrado"
 				empty.Font = Enum.Font.Gotham
 				empty.TextSize = 11
-				empty.TextColor3 = Cache.Color3_fromRGB(150,150,170)
+				empty.TextColor3 = Color3.fromRGB(150,150,170)
 				empty.TextXAlignment = Enum.TextXAlignment.Left
 				empty.Parent = spawnListFrame
 				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = empty
@@ -1831,8 +1854,8 @@ Keypad3 - Health Bars]]
 				for _, data in ipairs(positions) do
 					index = index + 1
 					local btn = Instance.new("TextButton")
-					btn.Size = Cache.UDim2_new(1,-10,0,28)
-					btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+					btn.Size = UDim2.new(1,-10,0,28)
+					btn.BackgroundColor3 = Color3.fromRGB(25,25,35)
 					local label = data.name
 					if data.name == "ArtifactSpawn" then
 						label = label .. " #" .. index
@@ -1840,7 +1863,7 @@ Keypad3 - Health Bars]]
 					btn.Text = "   📍 " .. label
 					btn.Font = Enum.Font.Gotham
 					btn.TextSize = 11
-					btn.TextColor3 = Cache.Color3_white
+					btn.TextColor3 = Color3.new(1,1,1)
 					btn.TextXAlignment = Enum.TextXAlignment.Left
 					btn.BorderSizePixel = 0
 					btn.Parent = spawnListFrame
@@ -1848,13 +1871,13 @@ Keypad3 - Health Bars]]
 					btn.MouseButton1Click:Connect(function()
 						local targetPos = data.part.Position + Cache.Vector3_new(0, 2, 5)
 						task.spawn(function() teleportWithNoClip(targetPos) end)
-						btn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+						btn.BackgroundColor3 = Color3.fromRGB(80,200,120)
 						task.wait(0.3)
-						btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+						btn.BackgroundColor3 = Color3.fromRGB(25,25,35)
 					end)
 				end
 			end
-			spawnListFrame.CanvasSize = Cache.UDim2_new(0,0,0, #positions * 32 + 10)
+			spawnListFrame.CanvasSize = UDim2.new(0,0,0, #positions * 32 + 10)
 		end
 
 		spawnRefreshBtn.MouseButton1Click:Connect(populateSpawnList)
@@ -2016,7 +2039,6 @@ Keypad3 - Health Bars]]
 			ESP.clearAllESP(); ESP.clearAllTracers(); ESP.clearAllHealthBars(); ESP.removeFOVCircle()
 			for _,esp in pairs(State.playerESPObjects) do if esp then esp:Destroy() end end
 			Combat.stopAutoAttack()
-			-- Restaura fullbright e fps booster ao fechar o gui (opcional)
 			if State.fullBrightEnabled then applyFullBright(false) end
 			if State.fpsBoosterEnabled then applyFPSBooster(false) end
 		end)
@@ -2054,16 +2076,16 @@ local Input = (function()
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
 
-			elseif input.KeyCode == Enum.KeyCode.KeypadOne then -- Kill Aura
+			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
 				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then -- Auto Farm
+			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
 				ToggleFunctions.autofarm(not State.autofarmEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.N then -- Speed
+			elseif input.KeyCode == Enum.KeyCode.N then
 				ToggleFunctions.speed(not State.speedEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.Y then -- Infinite Jump
+			elseif input.KeyCode == Enum.KeyCode.Y then
 				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
 
 			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
@@ -2103,13 +2125,11 @@ GUI.refreshToggles = guiResult.refreshToggles
 
 Input.init(mainFrame, ToggleFunctions)
 
--- Atualização de câmera a cada frame (cache)
 Utils.updateCameraCache()
 Core.Services.RunService.RenderStepped:Connect(function()
 	Utils.updateCameraCache()
 end)
 
--- Atualizações visuais otimizadas:
 local visualUpdateInterval = 0.1
 local lastVisualUpdate = 0
 Core.Services.RunService.Heartbeat:Connect(function(delta)
