@@ -7,6 +7,7 @@
 --//  Kill Aura (estilo deob) + Config System           --
 --//  Resizable & Draggable Window                      --
 --//  + Burst Count Configurable (1-10)                 --
+--//  + Nova aba Desert Raid                           --
 --//====================================================--
 
 local CyberHub = (function()
@@ -44,7 +45,7 @@ local Core = (function()
 
 	local State = {
 		autofarmEnabled    = false,
-		autofarmMode       = "Above",  -- ALTERADO: agora começa em "Above"
+		autofarmMode       = "Behind",
 		autofarmDistance   = 8,
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
@@ -172,8 +173,7 @@ local NPCCache = (function()
 			if npc:IsA("Model") and npc ~= player.Character then
 				local hum = npc:FindFirstChild("Humanoid")
 				local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-				-- ALTERADO: agora filtra NPCs com vida > 1 (ignora vida 1 ou 0)
-				if hum and npcRoot and hum.Health > 1 then
+				if hum and npcRoot and hum.Health > 0 then
 					local dist = (root.Position - npcRoot.Position).Magnitude
 					if dist <= CONFIG.MAX_DISTANCE then
 						table.insert(State.npcCache, { model=npc, root=npcRoot, humanoid=hum, distance=dist })
@@ -197,8 +197,7 @@ local NPCCache = (function()
 		if not npc or not npc.Parent then return false end
 		local hum = npc:FindFirstChild("Humanoid")
 		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-		-- ALTERADO: agora considera inválido se vida <= 1
-		if not hum or not npcRoot or hum.Health <= 1 then return false end
+		if not hum or not npcRoot or hum.Health <= 0 then return false end
 		local root = Utils.getCharComponents()
 		if not root then return false end
 		return (root.Position - npcRoot.Position).Magnitude <= Core.CONFIG.MAX_DISTANCE
@@ -474,7 +473,7 @@ local Combat = (function()
 
 	local autoAttackThread = nil
 	local autoAttackRunning = false
-	local attackCooldown = 0.12
+	local attackCooldown = 0.12 -- padrão
 
 	local function startAutoAttack()
 		if autoAttackThread then return end
@@ -562,28 +561,13 @@ local Combat = (function()
 		if not State.autofarmEnabled then return end
 		local root = Utils.getCharComponents()
 		if not root then return end
-
-		-- Verifica se o NPC atual é válido (vida > 1)
-		if not NPCCache.isValid(State.lockedNPC) then
-			State.lockedNPC = NPCCache.findClosest()
-			-- Validação dupla para garantir que o novo alvo também é válido
-			if not NPCCache.isValid(State.lockedNPC) then
-				State.lockedNPC = nil
-				return
-			end
-		end
-
+		if not NPCCache.isValid(State.lockedNPC) then State.lockedNPC = NPCCache.findClosest() end
 		local npc = State.lockedNPC
 		if not npc then return end
 		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-		if not npcRoot then
-			State.lockedNPC = nil
-			return
-		end
-
+		if not npcRoot then State.lockedNPC = nil return end
 		root.AssemblyLinearVelocity = Cache.Vector3_zero
 		root.AssemblyAngularVelocity = Cache.Vector3_zero
-
 		if State.autofarmMode == "Above" then
 			local targetPos = npcRoot.Position + Cache.Vector3_new(0, State.autofarmDistance, 0)
 			root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90),0,0)
@@ -1143,6 +1127,7 @@ local GUI = (function()
 		local teleportBtn = createSidebarBtn(sidebar, "📍", "TeleportBtn")
 		local configBtn = createSidebarBtn(sidebar, "⚙", "ConfigBtn")
 		local miscBtn = createSidebarBtn(sidebar, "🔧", "MiscBtn")
+		local desertBtn = createSidebarBtn(sidebar, "🏜", "DesertBtn") -- NOVO
 
 		local contentArea = Instance.new("Frame")
 		contentArea.Size = Cache.UDim2_new(1,-60,1,-40)
@@ -1155,9 +1140,10 @@ local GUI = (function()
 		local teleportPage = createPage("TeleportPage", contentArea)
 		local configPage = createPage("ConfigPage", contentArea)
 		local miscPage = createPage("MiscPage", contentArea)
+		local desertPage = createPage("DesertPage", contentArea) -- NOVO
 
-		local allPages = {combatPage, visualPage, teleportPage, configPage, miscPage}
-		local allBtns = {combatBtn, visualBtn, teleportBtn, configBtn, miscBtn}
+		local allPages = {combatPage, visualPage, teleportPage, configPage, miscPage, desertPage}
+		local allBtns = {combatBtn, visualBtn, teleportBtn, configBtn, miscBtn, desertBtn}
 		local function switchPage(targetPage, targetBtn)
 			for _,p in ipairs(allPages) do p.Visible = false end
 			for _,b in ipairs(allBtns) do
@@ -1173,6 +1159,7 @@ local GUI = (function()
 		teleportBtn.MouseButton1Click:Connect(function() switchPage(teleportPage, teleportBtn) end)
 		configBtn.MouseButton1Click:Connect(function() switchPage(configPage, configBtn) end)
 		miscBtn.MouseButton1Click:Connect(function() switchPage(miscPage, miscBtn) end)
+		desertBtn.MouseButton1Click:Connect(function() switchPage(desertPage, desertBtn) end) -- NOVO
 		switchPage(combatPage, combatBtn)
 
 		-- COMBAT PAGE
@@ -1470,6 +1457,158 @@ Keypad3 - Health Bars]]
 		bindsText.TextYAlignment = Enum.TextYAlignment.Top
 		bindsText.Parent = bindsContainer
 
+		-- ===================================================== --
+		--                  DESERT RAID PAGE (NOVA)              --
+		-- ===================================================== --
+		createSectionHeader(desertPage, "Desert Raid")
+
+		-- Botões para ClickDetectors
+		local clickContainer = Instance.new("Frame")
+		clickContainer.Size = Cache.UDim2_new(1,0,0,80)
+		clickContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		clickContainer.BorderSizePixel = 0
+		clickContainer.Parent = desertPage
+		local clickCorner = Instance.new("UICorner"); clickCorner.CornerRadius = UDim.new(0,6); clickCorner.Parent = clickContainer
+		local clickLayout = Instance.new("UIListLayout")
+		clickLayout.FillDirection = Enum.FillDirection.Horizontal
+		clickLayout.Padding = UDim.new(0,10)
+		clickLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		clickLayout.Parent = clickContainer
+		local clickPadding = Instance.new("UIPadding"); clickPadding.PaddingTop = UDim.new(0,10); clickPadding.Parent = clickContainer
+
+		local pedestalBtn = createButton(clickContainer, "🔮 Ativar Pedestal", Cache.Color3_fromRGB(200,180,80))
+		pedestalBtn.Size = Cache.UDim2_new(0,160,0,30)
+		pedestalBtn.MouseButton1Click:Connect(function()
+			local detector = workspace:FindFirstChild("DesertDesert") and workspace.DesertDesert:FindFirstChild("Pedestal") and workspace.DesertDesert.Pedestal:FindFirstChild("ClickDetector")
+			if detector then
+				fireclickdetector(detector)
+				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				task.wait(0.3)
+				pedestalBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,180,80)
+			else
+				pedestalBtn.Text = "❌ Não encontrado"
+				task.wait(1)
+				pedestalBtn.Text = "🔮 Ativar Pedestal"
+			end
+		end)
+
+		local dragonBtn = createButton(clickContainer, "🐉 Ativar Dragão", Cache.Color3_fromRGB(200,80,80))
+		dragonBtn.Size = Cache.UDim2_new(0,160,0,30)
+		dragonBtn.MouseButton1Click:Connect(function()
+			local detector = workspace:FindFirstChild("DesertDesert") and workspace.DesertDesert:FindFirstChild("DragonBossStuff") and workspace.DesertDesert.DragonBossStuff:FindFirstChild("ClickPart") and workspace.DesertDesert.DragonBossStuff.ClickPart:FindFirstChild("ClickDetector")
+			if detector then
+				fireclickdetector(detector)
+				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+				task.wait(0.3)
+				dragonBtn.BackgroundColor3 = Cache.Color3_fromRGB(200,80,80)
+			else
+				dragonBtn.Text = "❌ Não encontrado"
+				task.wait(1)
+				dragonBtn.Text = "🐉 Ativar Dragão"
+			end
+		end)
+
+		-- Seção de teletransporte para spawns
+		local spawnSection = Instance.new("Frame")
+		spawnSection.Size = Cache.UDim2_new(1,0,0,30)
+		spawnSection.BackgroundTransparency = 1
+		spawnSection.Parent = desertPage
+		local spawnLabel = Instance.new("TextLabel")
+		spawnLabel.Size = Cache.UDim2_new(1,-20,1,0)
+		spawnLabel.Position = Cache.UDim2_new(0,10,0,0)
+		spawnLabel.BackgroundTransparency = 1
+		spawnLabel.Text = "📍 Teletransporte para Spawns"
+		spawnLabel.Font = Enum.Font.GothamBold
+		spawnLabel.TextSize = 11
+		spawnLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		spawnLabel.TextXAlignment = Enum.TextXAlignment.Left
+		spawnLabel.Parent = spawnSection
+
+		local spawnRefreshBtn = createButton(desertPage, "🔄 Atualizar Spawns", Cache.Color3_fromRGB(80,200,120))
+		local spawnListFrame = Instance.new("ScrollingFrame")
+		spawnListFrame.Size = Cache.UDim2_new(1,0,0,150)
+		spawnListFrame.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+		spawnListFrame.BorderSizePixel = 0
+		spawnListFrame.CanvasSize = Cache.UDim2_new(0,0,0,0)
+		spawnListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		spawnListFrame.ScrollBarThickness = 3
+		spawnListFrame.Parent = desertPage
+		local spawnListLayout = Instance.new("UIListLayout")
+		spawnListLayout.Padding = UDim.new(0,4)
+		spawnListLayout.Parent = spawnListFrame
+
+		local function populateSpawnList()
+			-- Limpa lista
+			for _,c in ipairs(spawnListFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+
+			local positions = {}
+
+			-- ArtifactSpawns (9 Parts)
+			local artifactFolder = workspace:FindFirstChild("LibraryDungeon") and workspace.LibraryDungeon:FindFirstChild("ArtifactSpawns")
+			if artifactFolder then
+				for _, part in ipairs(artifactFolder:GetChildren()) do
+					if part:IsA("BasePart") then
+						table.insert(positions, { name = "ArtifactSpawn", part = part })
+					end
+				end
+			end
+
+			-- Wendigo BossSpawnPart
+			local wendigoPart = workspace:FindFirstChild("DesertDesert") and workspace.DesertDesert:FindFirstChild("Wendigo") and workspace.DesertDesert.Wendigo:FindFirstChild("BossSpawnPart")
+			if wendigoPart and wendigoPart:IsA("BasePart") then
+				table.insert(positions, { name = "Wendigo Spawn", part = wendigoPart })
+			end
+
+			if #positions == 0 then
+				local empty = Instance.new("TextLabel")
+				empty.Size = Cache.UDim2_new(1,-10,0,30)
+				empty.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+				empty.Text = "   Nenhum spawn encontrado"
+				empty.Font = Enum.Font.Gotham
+				empty.TextSize = 11
+				empty.TextColor3 = Cache.Color3_fromRGB(150,150,170)
+				empty.TextXAlignment = Enum.TextXAlignment.Left
+				empty.Parent = spawnListFrame
+				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = empty
+			else
+				-- Ordena por nome (ArtifactSpawn aparecem juntos)
+				table.sort(positions, function(a,b)
+					if a.name == b.name then return a.part.Name < b.part.Name end
+					return a.name < b.name
+				end)
+				local index = 0
+				for _, data in ipairs(positions) do
+					index = index + 1
+					local btn = Instance.new("TextButton")
+					btn.Size = Cache.UDim2_new(1,-10,0,28)
+					btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+					local label = data.name
+					if data.name == "ArtifactSpawn" then
+						label = label .. " #" .. index
+					end
+					btn.Text = "   📍 " .. label
+					btn.Font = Enum.Font.Gotham
+					btn.TextSize = 11
+					btn.TextColor3 = Cache.Color3_white
+					btn.TextXAlignment = Enum.TextXAlignment.Left
+					btn.BorderSizePixel = 0
+					btn.Parent = spawnListFrame
+					local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
+					btn.MouseButton1Click:Connect(function()
+						local targetPos = data.part.Position + Cache.Vector3_new(0, 2, 5)
+						Teleport.ultraSmoothTeleport(targetPos)
+						btn.BackgroundColor3 = Cache.Color3_fromRGB(80,200,120)
+						task.wait(0.3)
+						btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+					end)
+				end
+			end
+			spawnListFrame.CanvasSize = Cache.UDim2_new(0,0,0, #positions * 32 + 10)
+		end
+
+		spawnRefreshBtn.MouseButton1Click:Connect(populateSpawnList)
+		task.spawn(populateSpawnList)
+
 		-- TOGGLE FUNCTIONS
 		ToggleFunctions.autofarm = function(enabled)
 			State.autofarmEnabled = enabled
@@ -1645,16 +1784,16 @@ local Input = (function()
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
 
-			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
+			elseif input.KeyCode == Enum.KeyCode.KeypadOne then -- Kill Aura
 				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
+			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then -- Auto Farm
 				ToggleFunctions.autofarm(not State.autofarmEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.N then
+			elseif input.KeyCode == Enum.KeyCode.N then -- Speed
 				ToggleFunctions.speed(not State.speedEnabled)
 
-			elseif input.KeyCode == Enum.KeyCode.Y then
+			elseif input.KeyCode == Enum.KeyCode.Y then -- Infinite Jump
 				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
 
 			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
@@ -1694,11 +1833,13 @@ GUI.refreshToggles = guiResult.refreshToggles
 
 Input.init(mainFrame, ToggleFunctions)
 
+-- Atualização de câmera a cada frame (cache)
 Utils.updateCameraCache()
 Core.Services.RunService.RenderStepped:Connect(function()
 	Utils.updateCameraCache()
 end)
 
+-- Atualizações visuais otimizadas:
 local visualUpdateInterval = 0.1
 local lastVisualUpdate = 0
 Core.Services.RunService.Heartbeat:Connect(function(delta)
@@ -1728,7 +1869,7 @@ print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
 print("  🔥  Burst Count: ajustável (1-10)")
-print("  🔄  Auto-switch target when health ≤ 1")
+print("  🏜️  Desert Raid: ClickDetectors + Spawn TP")
 print("═══════════════════════════════════════════════")
 print("  F1   - Toggle GUI")
 print("  KP1  - Kill Aura (Auto Attack)")
