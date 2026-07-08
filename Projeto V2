@@ -1,0 +1,299 @@
+--//====================================================--
+--//                  CORE V2 - PART A                  --
+--//====================================================--
+
+local Core = {}
+Core.__index = Core
+
+--------------------------------------------------------
+-- SERVICES
+--------------------------------------------------------
+
+local Services = setmetatable({}, {
+	__index = function(self, index)
+		local service = game:GetService(index)
+		rawset(self, index, service)
+		return service
+	end
+})
+
+Core.Services = Services
+
+--------------------------------------------------------
+-- CONFIG
+--------------------------------------------------------
+
+Core.CONFIG = {
+
+	GUI_NAME = "CyberHub",
+
+	WINDOW = {
+
+		DEFAULT_SIZE = Vector2.new(640,700),
+		MIN_SIZE = Vector2.new(420,520),
+
+		DEFAULT_POSITION = UDim2.new(
+			0,
+			20,
+			0.5,
+			-350
+		)
+
+	},
+
+	COLORS = {
+
+		ACCENT = Color3.fromRGB(90,170,255),
+		SUCCESS = Color3.fromRGB(80,200,120),
+		WARNING = Color3.fromRGB(255,185,70),
+		DANGER = Color3.fromRGB(220,80,80)
+
+	},
+
+	FOLDERS = {
+
+		CONFIG = "CyberHub",
+
+	},
+
+	PLAYER = {
+
+		DEFAULT_SPEED = 16,
+		DEFAULT_JUMP = 50,
+
+	},
+
+	TELEPORT = {
+
+		SPEED = 150,
+		MAX_DISTANCE = 500
+
+	},
+
+	ESP = {
+
+		UPDATE_RATE = .08,
+
+	},
+
+	FARM = {
+
+		MAX_DISTANCE = 60,
+		BACK_DISTANCE = 3.5,
+		ABOVE_HEIGHT = 8,
+		HEIGHT_OFFSET = 2.5
+
+	}
+
+}
+
+--------------------------------------------------------
+-- RUNTIME
+--------------------------------------------------------
+
+Core.Runtime = {
+
+	Started = tick(),
+
+	Version = "V2",
+
+	Executor = identifyexecutor and identifyexecutor() or "Unknown",
+
+	IsClosing = false,
+
+}
+
+--------------------------------------------------------
+-- STATE
+--------------------------------------------------------
+
+Core.State = {
+
+	----------------------------------------------------
+	-- COMBAT
+	----------------------------------------------------
+
+	AutoFarm = false,
+	AutoFarmMode = "Behind",
+	AutoFarmDistance = 8,
+
+	BurstCount = 3,
+
+	KillAura = false,
+
+	LockCamera = false,
+
+	----------------------------------------------------
+	-- MOVEMENT
+	----------------------------------------------------
+
+	Speed = false,
+	SpeedValue = 150,
+
+	InfiniteJump = false,
+
+	NoClip = false,
+
+	----------------------------------------------------
+	-- VISUAL
+	----------------------------------------------------
+
+	ESP = false,
+
+	PlayerESP = false,
+
+	HealthBars = false,
+
+	Tracers = false,
+
+	FOV = false,
+
+	FullBright = false,
+
+	FPSBooster = false,
+
+	----------------------------------------------------
+	-- TELEPORT
+	----------------------------------------------------
+
+	IsTeleporting = false,
+
+	----------------------------------------------------
+	-- GUI
+	----------------------------------------------------
+
+	Visible = true,
+
+	Page = "Combat",
+
+	----------------------------------------------------
+	-- CONFIG
+	----------------------------------------------------
+
+	SelectedProfile = "default",
+
+	AutoLoad = nil
+
+}
+
+--------------------------------------------------------
+-- CACHE
+--------------------------------------------------------
+
+Core.Cache = {
+
+	Player = nil,
+
+	Character = nil,
+
+	Humanoid = nil,
+
+	Root = nil,
+
+	Camera = workspace.CurrentCamera,
+
+	NPCs = {},
+
+	Connections = {},
+
+	ESP = {},
+
+	Tracers = {},
+
+	HealthBars = {},
+
+	Drawings = {},
+
+	UI = {},
+
+}
+
+--------------------------------------------------------
+-- SHARED
+--------------------------------------------------------
+
+Core.Shared = {}
+
+--------------------------------------------------------
+-- EVENTS
+--------------------------------------------------------
+
+Core.Events = {}
+
+--------------------------------------------------------
+-- SIGNALS
+--------------------------------------------------------
+
+Core.Signals = {}
+
+--------------------------------------------------------
+-- UTILITIES
+--------------------------------------------------------
+
+Core.Types = {
+
+	Vector2 = Vector2,
+
+	Vector3 = Vector3,
+
+	CFrame = CFrame,
+
+	UDim2 = UDim2,
+
+	Color3 = Color3,
+
+	Enum = Enum,
+
+	Instance = Instance
+
+}
+
+--------------------------------------------------------
+-- SHORTCUTS
+--------------------------------------------------------
+
+Core.New = Instance.new
+
+Core.Wait = task.wait
+
+Core.Spawn = task.spawn
+
+Core.Delay = task.delay
+
+Core.Clock = os.clock
+
+Core.Tick = tick
+
+Core.JSON = Services.HttpService
+
+--------------------------------------------------------
+-- PLAYER CACHE
+--------------------------------------------------------
+
+function Core:UpdateCharacter()
+
+	local player = Services.Players.LocalPlayer
+
+	self.Cache.Player = player
+
+	self.Cache.Character = player.Character
+
+	self.Cache.Humanoid = self.Cache.Character
+		and self.Cache.Character:FindFirstChildOfClass("Humanoid")
+
+	self.Cache.Root = self.Cache.Character
+		and self.Cache.Character:FindFirstChild("HumanoidRootPart")
+
+	self.Cache.Camera = workspace.CurrentCamera
+
+end
+
+Core:UpdateCharacter()
+
+Services.Players.LocalPlayer.CharacterAdded:Connect(function()
+
+	task.wait(.15)
+
+	Core:UpdateCharacter()
+
+end)
