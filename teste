@@ -1,6 +1,18 @@
--- ======================================================================
--- PARTE 1: CORE SIMULADO (dependência base)
--- ======================================================================
+-- ============================================================
+-- VERIFICA SE ESTÁ EM UM LOCALSCRIPT
+-- ============================================================
+if not game:GetService("RunService"):IsClient() then
+    error("Este script deve ser executado no cliente (LocalScript)!")
+end
+
+local player = game.Players.LocalPlayer
+if not player then
+    error("Jogador local não encontrado. Aguarde o carregamento.")
+end
+
+-- ============================================================
+-- CORE
+-- ============================================================
 local Core = {
     Services = {},
     Flags = {},
@@ -12,7 +24,6 @@ local Core = {
     Runtime = {},
 }
 
--- Inicializa serviços (essenciais para UI)
 Core.Services.Players = game:GetService("Players")
 Core.Services.RunService = game:GetService("RunService")
 Core.Services.UserInputService = game:GetService("UserInputService")
@@ -22,7 +33,6 @@ Core.Services.HttpService = game:GetService("HttpService")
 Core.Services.Lighting = game:GetService("Lighting")
 Core.Services.StarterGui = game:GetService("StarterGui")
 
--- Funções de Flag
 function Core:SetFlag(name, value)
     self.Flags[name] = value
     self:FireEvent("FlagChanged", name, value)
@@ -38,7 +48,6 @@ function Core:GetFlag(name, default)
     return self.Flags[name]
 end
 
--- Registro de widgets
 function Core:RegisterWidget(name, widget)
     if not self.Registry[name] then
         self.Registry[name] = {}
@@ -47,7 +56,6 @@ function Core:RegisterWidget(name, widget)
     widget:Update(self:GetFlag(name, false))
 end
 
--- Eventos
 function Core:Connect(event, callback)
     if not self.Events[event] then
         self.Events[event] = {}
@@ -63,7 +71,6 @@ function Core:FireEvent(event, ...)
     end
 end
 
--- Registro de módulos
 function Core:RegisterModule(name, module)
     self.Modules[name] = module
     module.Core = self
@@ -76,7 +83,6 @@ function Core:GetModule(name)
     return self.Modules[name]
 end
 
--- Ciclo de vida
 function Core:Destroy()
     for _, conn in pairs(self.Connections) do
         if conn.Connected then conn:Disconnect() end
@@ -90,27 +96,28 @@ function Core:Destroy()
 end
 
 function Core:Notify(text, duration)
-    -- (opcional) será implementado depois
+    -- placeholder
 end
 
--- ======================================================================
--- PARTE 2: THEME (cores futuristas translúcidas)
--- ======================================================================
+print("[Core] Inicializado com sucesso!")
+
+-- ============================================================
+-- THEME (futurista translúcido)
+-- ============================================================
 local Theme = {
     Colors = {
-        -- Fundos translúcidos (preto/roxo/cinza)
-        Background = Color3.fromRGB(10, 8, 15),      -- quase preto com toque roxo
-        Surface = Color3.fromRGB(30, 20, 50),        -- roxo escuro
-        SurfaceLight = Color3.fromRGB(60, 40, 90),   -- roxo médio
-        Primary = Color3.fromRGB(150, 80, 255),      -- roxo vibrante
-        PrimaryDark = Color3.fromRGB(100, 50, 200),  -- roxo escuro
-        Text = Color3.fromRGB(255, 255, 255),        -- branco
-        TextDim = Color3.fromRGB(200, 190, 220),     -- cinza lilás claro
-        TextMuted = Color3.fromRGB(140, 130, 160),   -- cinza lilás médio
-        Success = Color3.fromRGB(100, 220, 150),     -- verde
-        Warning = Color3.fromRGB(255, 200, 80),      -- amarelo
-        Danger = Color3.fromRGB(230, 80, 100),       -- vermelho
-        Stroke = Color3.fromRGB(120, 80, 200),       -- borda roxa
+        Background = Color3.fromRGB(10, 8, 15),
+        Surface = Color3.fromRGB(30, 20, 50),
+        SurfaceLight = Color3.fromRGB(60, 40, 90),
+        Primary = Color3.fromRGB(150, 80, 255),
+        PrimaryDark = Color3.fromRGB(100, 50, 200),
+        Text = Color3.fromRGB(255, 255, 255),
+        TextDim = Color3.fromRGB(200, 190, 220),
+        TextMuted = Color3.fromRGB(140, 130, 160),
+        Success = Color3.fromRGB(100, 220, 150),
+        Warning = Color3.fromRGB(255, 200, 80),
+        Danger = Color3.fromRGB(230, 80, 100),
+        Stroke = Color3.fromRGB(120, 80, 200),
     },
     Fonts = {
         Default = Enum.Font.Gotham,
@@ -119,7 +126,7 @@ local Theme = {
     },
     Sizes = {
         Padding = 8,
-        CornerRadius = 10,        -- mais arredondado para estilo futurista
+        CornerRadius = 10,
         ToggleWidth = 38,
         ToggleHeight = 20,
         SliderHeight = 4,
@@ -131,7 +138,6 @@ local Theme = {
         EasingStyle = Enum.EasingStyle.Quad,
         EasingDirection = Enum.EasingDirection.Out,
     },
-    -- Transparências globais (aplicadas nos frames)
     Transparency = {
         Background = 0.85,
         Surface = 0.75,
@@ -140,7 +146,6 @@ local Theme = {
     }
 }
 
--- Aplica estilo de "card" com transparência e borda roxa
 function Theme:ApplyCard(frame)
     frame.BackgroundColor3 = self.Colors.Surface
     frame.BackgroundTransparency = self.Transparency.Card
@@ -156,7 +161,6 @@ function Theme:ApplyCard(frame)
     return frame
 end
 
--- Botão com hover e transparência
 function Theme:ApplyButton(button, color)
     button.BackgroundColor3 = color or self.Colors.Primary
     button.BackgroundTransparency = 0.2
@@ -168,7 +172,6 @@ function Theme:ApplyButton(button, color)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, self.Sizes.CornerRadius)
     corner.Parent = button
-    -- Hover: aumenta opacidade
     button.MouseEnter:Connect(function()
         self:Tween(button, { BackgroundTransparency = 0.05 }, 0.15)
     end)
@@ -178,7 +181,6 @@ function Theme:ApplyButton(button, color)
     return button
 end
 
--- Tween helper
 function Theme:Tween(object, properties, duration)
     local tweenInfo = TweenInfo.new(
         duration or self.Animations.Duration,
@@ -190,9 +192,11 @@ function Theme:Tween(object, properties, duration)
     return tween
 end
 
--- ======================================================================
--- PARTE 3: WIDGETS (Toggle, Slider, etc.)
--- ======================================================================
+print("[Theme] Carregado!")
+
+-- ============================================================
+-- WIDGETS (Toggle e Slider)
+-- ============================================================
 local Widgets = {}
 
 function Widgets:Toggle(parent, config)
@@ -201,7 +205,6 @@ function Widgets:Toggle(parent, config)
     local desc = config.desc
     local default = config.default or false
 
-    -- Container com fundo translúcido
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 0, desc and 55 or 40)
     container.BackgroundColor3 = Theme.Colors.Surface
@@ -212,7 +215,6 @@ function Widgets:Toggle(parent, config)
     corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
     corner.Parent = container
 
-    -- Label
     local labelObj = Instance.new("TextLabel")
     labelObj.Size = UDim2.new(0.7, -10, 0, 20)
     labelObj.Position = UDim2.new(0, 10, 0, desc and 8 or 10)
@@ -237,7 +239,6 @@ function Widgets:Toggle(parent, config)
         descObj.Parent = container
     end
 
-    -- Toggle background
     local bg = Instance.new("Frame")
     bg.Size = UDim2.new(0, Theme.Sizes.ToggleWidth, 0, Theme.Sizes.ToggleHeight)
     bg.Position = UDim2.new(1, -(Theme.Sizes.ToggleWidth + 7), 0, 10)
@@ -249,7 +250,6 @@ function Widgets:Toggle(parent, config)
     bgCorner.CornerRadius = UDim.new(1, 0)
     bgCorner.Parent = bg
 
-    -- Circle
     local circle = Instance.new("Frame")
     circle.Size = UDim2.new(0, 16, 0, 16)
     circle.Position = UDim2.new(0, 2, 0.5, -8)
@@ -261,14 +261,12 @@ function Widgets:Toggle(parent, config)
     circleCorner.CornerRadius = UDim.new(1, 0)
     circleCorner.Parent = circle
 
-    -- Botão interativo
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 1, 0)
     btn.BackgroundTransparency = 1
     btn.Text = ""
     btn.Parent = bg
 
-    -- Estado
     local function setState(value)
         Core:SetFlag(flag, value)
         Theme:Tween(bg, {
@@ -303,11 +301,158 @@ function Widgets:Toggle(parent, config)
     return container, widget
 end
 
--- (Aqui você pode adicionar Slider, Dropdown, etc. seguindo o mesmo padrão)
+function Widgets:Slider(parent, config)
+    local flag = config.flag
+    local label = config.label
+    local desc = config.desc
+    local min = config.min or 0
+    local max = config.max or 100
+    local default = config.default or 50
+    local step = config.step or 1
 
--- ======================================================================
--- PARTE 4: WINDOW (janela principal com sidebar)
--- ======================================================================
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, desc and 65 or 50)
+    container.BackgroundColor3 = Theme.Colors.Surface
+    container.BackgroundTransparency = Theme.Transparency.Surface
+    container.BorderSizePixel = 0
+    container.Parent = parent
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = container
+
+    local labelObj = Instance.new("TextLabel")
+    labelObj.Size = UDim2.new(0.6, -10, 0, 20)
+    labelObj.Position = UDim2.new(0, 10, 0, desc and 6 or 8)
+    labelObj.BackgroundTransparency = 1
+    labelObj.Text = label
+    labelObj.Font = Theme.Fonts.Default
+    labelObj.TextSize = 12
+    labelObj.TextColor3 = Theme.Colors.Text
+    labelObj.TextXAlignment = Enum.TextXAlignment.Left
+    labelObj.Parent = container
+
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0.3, -10, 0, 20)
+    valueLabel.Position = UDim2.new(0.7, 0, 0, desc and 6 or 8)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = tostring(default)
+    valueLabel.Font = Theme.Fonts.Mono
+    valueLabel.TextSize = 12
+    valueLabel.TextColor3 = Theme.Colors.TextDim
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = container
+
+    if desc then
+        local descObj = Instance.new("TextLabel")
+        descObj.Size = UDim2.new(1, -20, 0, 18)
+        descObj.Position = UDim2.new(0, 10, 0, 28)
+        descObj.BackgroundTransparency = 1
+        descObj.Text = desc
+        descObj.Font = Theme.Fonts.Default
+        descObj.TextSize = 9
+        descObj.TextColor3 = Theme.Colors.TextMuted
+        descObj.TextWrapped = true
+        descObj.Parent = container
+    end
+
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(0.9, 0, 0, Theme.Sizes.SliderHeight)
+    sliderBg.Position = UDim2.new(0.05, 0, 1, -(desc and 28 or 12))
+    sliderBg.BackgroundColor3 = Theme.Colors.SurfaceLight
+    sliderBg.BackgroundTransparency = Theme.Transparency.SurfaceLight
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = container
+    local cornerBg = Instance.new("UICorner")
+    cornerBg.CornerRadius = UDim.new(1, 0)
+    cornerBg.Parent = sliderBg
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = Theme.Colors.Primary
+    fill.BackgroundTransparency = 0.3
+    fill.BorderSizePixel = 0
+    fill.Parent = sliderBg
+    local cornerFill = Instance.new("UICorner")
+    cornerFill.CornerRadius = UDim.new(1, 0)
+    cornerFill.Parent = fill
+
+    local thumb = Instance.new("Frame")
+    thumb.Size = UDim2.new(0, 14, 0, 14)
+    thumb.Position = UDim2.new(0, -7, 0.5, -7)
+    thumb.BackgroundColor3 = Theme.Colors.Primary
+    thumb.BackgroundTransparency = 0.2
+    thumb.BorderSizePixel = 0
+    thumb.Parent = sliderBg
+    local cornerThumb = Instance.new("UICorner")
+    cornerThumb.CornerRadius = UDim.new(1, 0)
+    cornerThumb.Parent = thumb
+    local strokeThumb = Instance.new("UIStroke")
+    strokeThumb.Color = Theme.Colors.Stroke
+    strokeThumb.Thickness = 1
+    strokeThumb.Transparency = 0.3
+    strokeThumb.Parent = thumb
+
+    local function updateSlider(value)
+        local clamped = math.clamp(value, min, max)
+        if step then
+            clamped = math.floor(clamped / step + 0.5) * step
+        end
+        local percent = (clamped - min) / (max - min)
+        fill.Size = UDim2.new(percent, 0, 1, 0)
+        thumb.Position = UDim2.new(percent, -7, 0.5, -7)
+        valueLabel.Text = tostring(clamped)
+        Core:SetFlag(flag, clamped)
+    end
+
+    local dragging = false
+    thumb.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+    thumb.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    sliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local pos = input.Position.X - sliderBg.AbsolutePosition.X
+            local size = sliderBg.AbsoluteSize.X
+            local percent = math.clamp(pos / size, 0, 1)
+            local value = min + (max - min) * percent
+            updateSlider(value)
+        end
+    end)
+
+    Core.Services.UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local pos = input.Position.X - sliderBg.AbsolutePosition.X
+            local size = sliderBg.AbsoluteSize.X
+            local percent = math.clamp(pos / size, 0, 1)
+            local value = min + (max - min) * percent
+            updateSlider(value)
+        end
+    end)
+
+    local initial = Core:GetFlag(flag, default)
+    updateSlider(initial)
+
+    local widget = {
+        Update = function(value)
+            updateSlider(value)
+        end
+    }
+    Core:RegisterWidget(flag, widget)
+
+    return container, widget
+end
+
+print("[Widgets] Carregado!")
+
+-- ============================================================
+-- WINDOW
+-- ============================================================
 local Window = {}
 
 function Window:CreateWindow(config)
@@ -315,13 +460,11 @@ function Window:CreateWindow(config)
     local size = config.size or Vector2.new(600, 700)
     local icon = config.icon or "✦"
 
-    -- ScreenGui (com fundo transparente)
     local gui = Instance.new("ScreenGui")
     gui.Name = "RyuHub"
     gui.ResetOnSpawn = false
-    gui.Parent = Core.Services.CoreGui
+    gui.Parent = player.PlayerGui
 
-    -- Frame principal (transparente)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, size.X, 0, size.Y)
     frame.Position = UDim2.new(0, 20, 0.5, -size.Y/2)
@@ -332,9 +475,8 @@ function Window:CreateWindow(config)
     frame.Draggable = true
     frame.Parent = gui
 
-    Theme:ApplyCard(frame) -- adiciona corner e stroke
+    Theme:ApplyCard(frame)
 
-    -- Topbar
     local topbar = Instance.new("Frame")
     topbar.Size = UDim2.new(1, 0, 0, 35)
     topbar.BackgroundColor3 = Theme.Colors.Surface
@@ -342,7 +484,6 @@ function Window:CreateWindow(config)
     topbar.BorderSizePixel = 0
     topbar.Parent = frame
 
-    -- Título
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Size = UDim2.new(0.8, 0, 1, 0)
     titleLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -354,7 +495,6 @@ function Window:CreateWindow(config)
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Parent = topbar
 
-    -- Botão fechar (estilo futurista)
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 2.5)
@@ -373,7 +513,6 @@ function Window:CreateWindow(config)
         gui:Destroy()
     end)
 
-    -- Sidebar
     local sidebar = Instance.new("Frame")
     sidebar.Size = UDim2.new(0, 45, 1, -40)
     sidebar.Position = UDim2.new(0, 5, 0, 38)
@@ -382,21 +521,18 @@ function Window:CreateWindow(config)
     sidebar.BorderSizePixel = 0
     sidebar.Parent = frame
 
-    -- Layout da sidebar (vertical)
     local sidebarLayout = Instance.new("UIListLayout")
     sidebarLayout.Padding = UDim.new(0, 6)
     sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
     sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     sidebarLayout.Parent = sidebar
 
-    -- Área de conteúdo
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1, -60, 1, -40)
     content.Position = UDim2.new(0, 55, 0, 38)
     content.BackgroundTransparency = 1
     content.Parent = frame
 
-    -- Tabelas de páginas
     local pages = {}
     local pageButtons = {}
 
@@ -417,7 +553,6 @@ function Window:CreateWindow(config)
         layout.SortOrder = Enum.SortOrder.LayoutOrder
         layout.Parent = page
 
-        -- Botão na sidebar
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 35, 0, 35)
         btn.BackgroundColor3 = Theme.Colors.SurfaceLight
@@ -432,7 +567,6 @@ function Window:CreateWindow(config)
         cornerBtn.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
         cornerBtn.Parent = btn
 
-        -- Tooltip (opcional)
         local tooltip = Instance.new("TextLabel")
         tooltip.Size = UDim2.new(0, 80, 0, 20)
         tooltip.Position = UDim2.new(1, 5, 0.5, -10)
@@ -484,7 +618,6 @@ function Window:CreateWindow(config)
         end
     end
 
-    -- Retorna interface pública
     return {
         Frame = frame,
         Gui = gui,
@@ -496,40 +629,324 @@ function Window:CreateWindow(config)
     }
 end
 
--- Cria a janela
+print("[Window] Carregado!")
+
+-- ============================================================
+-- MÓDULO COMBAT (KILL AURA)
+-- ============================================================
+local Combat = {}
+
+function Combat:Init()
+    -- Conecta os loops principais
+    Core.Connections.AutoFarm = Core.Services.RunService.Heartbeat:Connect(function()
+        if Core:GetFlag("AutoFarm") then
+            self:AutoFarmLoop()
+        end
+    end)
+
+    Core.Connections.LockOn = Core.Services.RunService.RenderStepped:Connect(function()
+        if Core:GetFlag("LockOn") then
+            self:LockOnLoop()
+        end
+    end)
+
+    Core.Connections.Speed = Core.Services.RunService.Heartbeat:Connect(function()
+        if Core:GetFlag("Speed") then
+            self:SpeedLoop()
+        end
+    end)
+
+    -- Reage a mudanças na flag AutoAttack
+    Core:Connect("FlagChanged", function(flag, value)
+        if flag == "AutoAttack" then
+            if value then
+                self:StartAutoAttack()
+            else
+                self:StopAutoAttack()
+            end
+        end
+    end)
+
+    -- Inicia autoattack se já estiver ativo
+    if Core:GetFlag("AutoAttack") then
+        self:StartAutoAttack()
+    end
+end
+
+-- ============================================================
+-- AUXILIARES DO COMBAT
+-- ============================================================
+function Combat:getCharComponents()
+    local char = player.Character
+    if not char then return nil, nil end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChild("Humanoid")
+    if not root or not hum then return nil, nil end
+    return root, hum
+end
+
+function Combat:findClosestNPC()
+    local root = self:getCharComponents()
+    if not root then return nil end
+    local closest = nil
+    local closestDist = math.huge
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= player.Character then
+            local hrp = obj:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local dist = (hrp.Position - root.Position).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closest = obj
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- ============================================================
+-- AUTO ATTACK
+-- ============================================================
+local autoAttackThread = nil
+local autoAttackRunning = false
+local attackCooldown = 0.12
+
+function Combat:StartAutoAttack()
+    if autoAttackThread then return end
+    autoAttackRunning = true
+    autoAttackThread = task.spawn(function()
+        local remote = game.ReplicatedStorage:FindFirstChild("Events") and game.ReplicatedStorage.Events:FindFirstChild("CombatEvent")
+        if not remote then
+            warn("[Combat] Remote não encontrado, AutoAttack não funcionará.")
+            return
+        end
+        local char = player.Character or player.CharacterAdded:Wait()
+        local weapon = char:FindFirstChild("FistCombat") and char.FistCombat:FindFirstChild("WeaponInfoFolder") and char.FistCombat.WeaponInfoFolder:FindFirstChild("Fist")
+        if not weapon then
+            warn("[Combat] Arma Fist não encontrada, AutoAttack pode falhar.")
+        end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then
+            warn("[Combat] HumanoidRootPart não encontrado.")
+            return
+        end
+
+        while autoAttackRunning do
+            task.wait(attackCooldown)
+
+            local target = nil
+            -- tenta pegar alvo do LockOn ou AutoFarm
+            if Core:GetFlag("LockOn") then
+                -- se LockOn estiver ativo, usamos o alvo que a câmera está seguindo? 
+                -- Vamos simplesmente buscar o NPC mais próximo
+                target = self:findClosestNPC()
+            elseif Core:GetFlag("AutoFarm") then
+                target = self:findClosestNPC()
+            else
+                target = self:findClosestNPC()
+            end
+
+            local burst = Core:GetFlag("BurstCount", 3)
+            if burst < 1 then burst = 1 end
+
+            if target then
+                local npcRoot = target:FindFirstChild("HumanoidRootPart")
+                if npcRoot then
+                    local attackPos = npcRoot.Position
+                    local mode = Core:GetFlag("AutofarmMode", "Behind")
+                    local distance = Core:GetFlag("AutofarmDistance", 3)
+                    if mode == "Behind" then
+                        local backVec = -npcRoot.CFrame.LookVector * distance
+                        attackPos = npcRoot.Position + backVec + Vector3.new(0, 2.5, 0)
+                    elseif mode == "Above" then
+                        attackPos = npcRoot.Position + Vector3.new(0, distance, 0)
+                    end
+                    local cframe = CFrame.new(attackPos, npcRoot.Position)
+                    for _ = 1, burst do
+                        remote:FireServer(1, weapon, cframe, true, weapon)
+                        remote:FireServer(2, weapon, cframe, true, weapon)
+                        remote:FireServer(3, weapon, cframe, true, weapon)
+                        remote:FireServer(4, weapon, cframe, true, weapon)
+                    end
+                end
+            else
+                -- ataque no vazio
+                if root then
+                    local cframe = root.CFrame * CFrame.new(0, 0, -3)
+                    for _ = 1, burst do
+                        remote:FireServer(1, weapon, cframe, true, weapon)
+                        remote:FireServer(2, weapon, cframe, true, weapon)
+                        remote:FireServer(3, weapon, cframe, true, weapon)
+                        remote:FireServer(4, weapon, cframe, true, weapon)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+function Combat:StopAutoAttack()
+    autoAttackRunning = false
+    if autoAttackThread then
+        task.cancel(autoAttackThread)
+        autoAttackThread = nil
+    end
+end
+
+-- ============================================================
+-- LOCK ON
+-- ============================================================
+function Combat:LockOnLoop()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    local target = self:findClosestNPC()
+    if not target then return end
+    local npcRoot = target:FindFirstChild("HumanoidRootPart")
+    if not npcRoot then return end
+    local currentPos = camera.CFrame.Position
+    local targetPos = npcRoot.Position
+    local lookAt = CFrame.new(currentPos, targetPos)
+    camera.CFrame = camera.CFrame:Lerp(lookAt, 0.35)
+end
+
+-- ============================================================
+-- AUTOFARM
+-- ============================================================
+function Combat:AutoFarmLoop()
+    local root, hum = self:getCharComponents()
+    if not root then return end
+    local target = self:findClosestNPC()
+    if not target then return end
+    local npcRoot = target:FindFirstChild("HumanoidRootPart")
+    if not npcRoot then return end
+
+    root.AssemblyLinearVelocity = Vector3.zero
+    root.AssemblyAngularVelocity = Vector3.zero
+
+    local mode = Core:GetFlag("AutofarmMode", "Behind")
+    local distance = Core:GetFlag("AutofarmDistance", 3)
+
+    if mode == "Above" then
+        local targetPos = npcRoot.Position + Vector3.new(0, distance, 0)
+        root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+    else -- Behind
+        local backVec = -npcRoot.CFrame.LookVector * distance
+        local upVec = Vector3.new(0, 2.5, 0)
+        local targetPos = npcRoot.Position + backVec + upVec
+        root.CFrame = CFrame.new(targetPos, npcRoot.Position)
+    end
+end
+
+-- ============================================================
+-- SPEED
+-- ============================================================
+function Combat:SpeedLoop()
+    local root, hum = self:getCharComponents()
+    if not root or not hum then return end
+    local moveDir = hum.MoveDirection
+    if moveDir.Magnitude > 0 then
+        local speed = Core:GetFlag("SpeedValue", 16)
+        local curY = root.AssemblyLinearVelocity.Y
+        root.AssemblyLinearVelocity = (moveDir.Unit * speed) + Vector3.new(0, curY, 0)
+    end
+end
+
+-- Registra o módulo no Core
+Core:RegisterModule("Combat", Combat)
+
+-- ============================================================
+-- CRIAÇÃO DA UI
+-- ============================================================
+print("Criando a UI...")
 local mainWindow = Window:CreateWindow({
     title = "Nexus Hub",
     size = Vector2.new(600, 700),
     icon = "⚡"
 })
 
--- Cria uma página "Geral"
+-- Página Geral
 local pageGeneral = mainWindow:CreatePage("Geral", "⌂")
-
--- Adiciona um toggle
 Widgets:Toggle(pageGeneral, {
     flag = "AutoFarm",
     label = "Auto Farm",
-    desc = "Ativa o farm automático",
+    desc = "Ativa o farm automático (posiciona perto do NPC)",
     default = false
 })
-
 Widgets:Toggle(pageGeneral, {
-    flag = "Fly",
-    label = "Modo Voo",
-    desc = "Permite voar livremente",
-    default = true
+    flag = "LockOn",
+    label = "Lock On",
+    desc = "A câmera acompanha o alvo",
+    default = false
+})
+Widgets:Toggle(pageGeneral, {
+    flag = "AutoAttack",
+    label = "Auto Attack",
+    desc = "Ataca automaticamente o alvo mais próximo",
+    default = false
+})
+Widgets:Toggle(pageGeneral, {
+    flag = "Speed",
+    label = "Speed Boost",
+    desc = "Aumenta a velocidade de movimento",
+    default = false
+})
+Widgets:Slider(pageGeneral, {
+    flag = "SpeedValue",
+    label = "Velocidade",
+    desc = "Valor da velocidade (16-50)",
+    min = 16,
+    max = 50,
+    default = 16,
+    step = 1
 })
 
--- Cria outra página
-local pageSettings = mainWindow:CreatePage("Ajustes", "⚙")
-Widgets:Toggle(pageSettings, {
-    flag = "Notifications",
-    label = "Notificações",
-    desc = "Mostrar notificações na tela",
-    default = true
+-- Página Combat (configurações avançadas)
+local pageCombat = mainWindow:CreatePage("Combate", "⚔")
+Widgets:Slider(pageCombat, {
+    flag = "AutofarmDistance",
+    label = "Distância do AutoFarm",
+    desc = "Distância do NPC (1-10)",
+    min = 1,
+    max = 10,
+    default = 3,
+    step = 0.5
+})
+Widgets:Slider(pageCombat, {
+    flag = "BurstCount",
+    label = "Burst Count",
+    desc = "Número de ataques por ciclo (1-10)",
+    min = 1,
+    max = 10,
+    default = 3,
+    step = 1
+})
+Widgets:Slider(pageCombat, {
+    flag = "AttackCooldown",
+    label = "Cooldown do Ataque",
+    desc = "Intervalo entre ataques (segundos, 0.05-0.5)",
+    min = 0.05,
+    max = 0.5,
+    default = 0.12,
+    step = 0.01
 })
 
--- Alterna para a primeira página
+-- Como não temos um widget de dropdown, usamos dois botões para modo Behind/Above
+-- ou um toggle? Vamos criar um toggle para o modo (Behind = false, Above = true)
+Widgets:Toggle(pageCombat, {
+    flag = "AutofarmModeAbove",
+    label = "Modo AutoFarm: Above",
+    desc = "Desativado = Behind, Ativado = Above",
+    default = false
+})
+-- Monitorar essa flag para ajustar o modo
+Core:Connect("FlagChanged", function(flag, value)
+    if flag == "AutofarmModeAbove" then
+        Core:SetFlag("AutofarmMode", value and "Above" or "Behind")
+    end
+end)
+-- Inicializar o modo
+Core:SetFlag("AutofarmMode", Core:GetFlag("AutofarmModeAbove") and "Above" or "Behind")
+
 mainWindow:SwitchPage(pageGeneral)
---]]
+print("UI criada com sucesso! A janela está visível.")
