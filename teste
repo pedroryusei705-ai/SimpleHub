@@ -1,0 +1,535 @@
+-- ======================================================================
+-- PARTE 1: CORE SIMULADO (dependência base)
+-- ======================================================================
+local Core = {
+    Services = {},
+    Flags = {},
+    Registry = {},
+    Events = {},
+    Connections = {},
+    Modules = {},
+    Config = {},
+    Runtime = {},
+}
+
+-- Inicializa serviços (essenciais para UI)
+Core.Services.Players = game:GetService("Players")
+Core.Services.RunService = game:GetService("RunService")
+Core.Services.UserInputService = game:GetService("UserInputService")
+Core.Services.CoreGui = game:GetService("CoreGui")
+Core.Services.TweenService = game:GetService("TweenService")
+Core.Services.HttpService = game:GetService("HttpService")
+Core.Services.Lighting = game:GetService("Lighting")
+Core.Services.StarterGui = game:GetService("StarterGui")
+
+-- Funções de Flag
+function Core:SetFlag(name, value)
+    self.Flags[name] = value
+    self:FireEvent("FlagChanged", name, value)
+    if self.Registry[name] then
+        for _, widget in ipairs(self.Registry[name]) do
+            widget:Update(value)
+        end
+    end
+end
+
+function Core:GetFlag(name, default)
+    if self.Flags[name] == nil then return default end
+    return self.Flags[name]
+end
+
+-- Registro de widgets
+function Core:RegisterWidget(name, widget)
+    if not self.Registry[name] then
+        self.Registry[name] = {}
+    end
+    table.insert(self.Registry[name], widget)
+    widget:Update(self:GetFlag(name, false))
+end
+
+-- Eventos
+function Core:Connect(event, callback)
+    if not self.Events[event] then
+        self.Events[event] = {}
+    end
+    table.insert(self.Events[event], callback)
+end
+
+function Core:FireEvent(event, ...)
+    if self.Events[event] then
+        for _, cb in ipairs(self.Events[event]) do
+            task.spawn(cb, ...)
+        end
+    end
+end
+
+-- Registro de módulos
+function Core:RegisterModule(name, module)
+    self.Modules[name] = module
+    module.Core = self
+    if module.Init then
+        module:Init()
+    end
+end
+
+function Core:GetModule(name)
+    return self.Modules[name]
+end
+
+-- Ciclo de vida
+function Core:Destroy()
+    for _, conn in pairs(self.Connections) do
+        if conn.Connected then conn:Disconnect() end
+    end
+    table.clear(self.Connections)
+    table.clear(self.Events)
+    table.clear(self.Registry)
+    if self.Window then
+        self.Window:Destroy()
+    end
+end
+
+function Core:Notify(text, duration)
+    -- (opcional) será implementado depois
+end
+
+-- ======================================================================
+-- PARTE 2: THEME (cores futuristas translúcidas)
+-- ======================================================================
+local Theme = {
+    Colors = {
+        -- Fundos translúcidos (preto/roxo/cinza)
+        Background = Color3.fromRGB(10, 8, 15),      -- quase preto com toque roxo
+        Surface = Color3.fromRGB(30, 20, 50),        -- roxo escuro
+        SurfaceLight = Color3.fromRGB(60, 40, 90),   -- roxo médio
+        Primary = Color3.fromRGB(150, 80, 255),      -- roxo vibrante
+        PrimaryDark = Color3.fromRGB(100, 50, 200),  -- roxo escuro
+        Text = Color3.fromRGB(255, 255, 255),        -- branco
+        TextDim = Color3.fromRGB(200, 190, 220),     -- cinza lilás claro
+        TextMuted = Color3.fromRGB(140, 130, 160),   -- cinza lilás médio
+        Success = Color3.fromRGB(100, 220, 150),     -- verde
+        Warning = Color3.fromRGB(255, 200, 80),      -- amarelo
+        Danger = Color3.fromRGB(230, 80, 100),       -- vermelho
+        Stroke = Color3.fromRGB(120, 80, 200),       -- borda roxa
+    },
+    Fonts = {
+        Default = Enum.Font.Gotham,
+        Bold = Enum.Font.GothamBold,
+        Mono = Enum.Font.SourceSans,
+    },
+    Sizes = {
+        Padding = 8,
+        CornerRadius = 10,        -- mais arredondado para estilo futurista
+        ToggleWidth = 38,
+        ToggleHeight = 20,
+        SliderHeight = 4,
+        ButtonHeight = 35,
+        SectionHeight = 30,
+    },
+    Animations = {
+        Duration = 0.2,
+        EasingStyle = Enum.EasingStyle.Quad,
+        EasingDirection = Enum.EasingDirection.Out,
+    },
+    -- Transparências globais (aplicadas nos frames)
+    Transparency = {
+        Background = 0.85,
+        Surface = 0.75,
+        SurfaceLight = 0.60,
+        Card = 0.70,
+    }
+}
+
+-- Aplica estilo de "card" com transparência e borda roxa
+function Theme:ApplyCard(frame)
+    frame.BackgroundColor3 = self.Colors.Surface
+    frame.BackgroundTransparency = self.Transparency.Card
+    frame.BorderSizePixel = 0
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, self.Sizes.CornerRadius)
+    corner.Parent = frame
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = self.Colors.Stroke
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.3
+    stroke.Parent = frame
+    return frame
+end
+
+-- Botão com hover e transparência
+function Theme:ApplyButton(button, color)
+    button.BackgroundColor3 = color or self.Colors.Primary
+    button.BackgroundTransparency = 0.2
+    button.TextColor3 = self.Colors.Text
+    button.Font = self.Fonts.Bold
+    button.TextSize = 12
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = false
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, self.Sizes.CornerRadius)
+    corner.Parent = button
+    -- Hover: aumenta opacidade
+    button.MouseEnter:Connect(function()
+        self:Tween(button, { BackgroundTransparency = 0.05 }, 0.15)
+    end)
+    button.MouseLeave:Connect(function()
+        self:Tween(button, { BackgroundTransparency = 0.2 }, 0.15)
+    end)
+    return button
+end
+
+-- Tween helper
+function Theme:Tween(object, properties, duration)
+    local tweenInfo = TweenInfo.new(
+        duration or self.Animations.Duration,
+        self.Animations.EasingStyle,
+        self.Animations.EasingDirection
+    )
+    local tween = Core.Services.TweenService:Create(object, tweenInfo, properties)
+    tween:Play()
+    return tween
+end
+
+-- ======================================================================
+-- PARTE 3: WIDGETS (Toggle, Slider, etc.)
+-- ======================================================================
+local Widgets = {}
+
+function Widgets:Toggle(parent, config)
+    local flag = config.flag
+    local label = config.label
+    local desc = config.desc
+    local default = config.default or false
+
+    -- Container com fundo translúcido
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, desc and 55 or 40)
+    container.BackgroundColor3 = Theme.Colors.Surface
+    container.BackgroundTransparency = Theme.Transparency.Surface
+    container.BorderSizePixel = 0
+    container.Parent = parent
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = container
+
+    -- Label
+    local labelObj = Instance.new("TextLabel")
+    labelObj.Size = UDim2.new(0.7, -10, 0, 20)
+    labelObj.Position = UDim2.new(0, 10, 0, desc and 8 or 10)
+    labelObj.BackgroundTransparency = 1
+    labelObj.Text = label
+    labelObj.Font = Theme.Fonts.Default
+    labelObj.TextSize = 12
+    labelObj.TextColor3 = Theme.Colors.Text
+    labelObj.TextXAlignment = Enum.TextXAlignment.Left
+    labelObj.Parent = container
+
+    if desc then
+        local descObj = Instance.new("TextLabel")
+        descObj.Size = UDim2.new(1, -20, 0, 18)
+        descObj.Position = UDim2.new(0, 10, 0, 28)
+        descObj.BackgroundTransparency = 1
+        descObj.Text = desc
+        descObj.Font = Theme.Fonts.Default
+        descObj.TextSize = 9
+        descObj.TextColor3 = Theme.Colors.TextMuted
+        descObj.TextWrapped = true
+        descObj.Parent = container
+    end
+
+    -- Toggle background
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(0, Theme.Sizes.ToggleWidth, 0, Theme.Sizes.ToggleHeight)
+    bg.Position = UDim2.new(1, -(Theme.Sizes.ToggleWidth + 7), 0, 10)
+    bg.BackgroundColor3 = Theme.Colors.SurfaceLight
+    bg.BackgroundTransparency = Theme.Transparency.SurfaceLight
+    bg.BorderSizePixel = 0
+    bg.Parent = container
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(1, 0)
+    bgCorner.Parent = bg
+
+    -- Circle
+    local circle = Instance.new("Frame")
+    circle.Size = UDim2.new(0, 16, 0, 16)
+    circle.Position = UDim2.new(0, 2, 0.5, -8)
+    circle.BackgroundColor3 = Theme.Colors.Text
+    circle.BackgroundTransparency = 0
+    circle.BorderSizePixel = 0
+    circle.Parent = bg
+    local circleCorner = Instance.new("UICorner")
+    circleCorner.CornerRadius = UDim.new(1, 0)
+    circleCorner.Parent = circle
+
+    -- Botão interativo
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = bg
+
+    -- Estado
+    local function setState(value)
+        Core:SetFlag(flag, value)
+        Theme:Tween(bg, {
+            BackgroundColor3 = value and Theme.Colors.Primary or Theme.Colors.SurfaceLight,
+            BackgroundTransparency = value and 0.1 or Theme.Transparency.SurfaceLight
+        })
+        Theme:Tween(circle, {
+            Position = value and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        })
+    end
+
+    local initial = Core:GetFlag(flag, default)
+    setState(initial)
+
+    btn.MouseButton1Click:Connect(function()
+        setState(not Core:GetFlag(flag))
+    end)
+
+    local widget = {
+        Update = function(value)
+            Theme:Tween(bg, {
+                BackgroundColor3 = value and Theme.Colors.Primary or Theme.Colors.SurfaceLight,
+                BackgroundTransparency = value and 0.1 or Theme.Transparency.SurfaceLight
+            })
+            Theme:Tween(circle, {
+                Position = value and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+            })
+        end
+    }
+    Core:RegisterWidget(flag, widget)
+
+    return container, widget
+end
+
+-- (Aqui você pode adicionar Slider, Dropdown, etc. seguindo o mesmo padrão)
+
+-- ======================================================================
+-- PARTE 4: WINDOW (janela principal com sidebar)
+-- ======================================================================
+local Window = {}
+
+function Window:CreateWindow(config)
+    local title = config.title or "RyuHub"
+    local size = config.size or Vector2.new(600, 700)
+    local icon = config.icon or "✦"
+
+    -- ScreenGui (com fundo transparente)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "RyuHub"
+    gui.ResetOnSpawn = false
+    gui.Parent = Core.Services.CoreGui
+
+    -- Frame principal (transparente)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, size.X, 0, size.Y)
+    frame.Position = UDim2.new(0, 20, 0.5, -size.Y/2)
+    frame.BackgroundColor3 = Theme.Colors.Background
+    frame.BackgroundTransparency = Theme.Transparency.Background
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = gui
+
+    Theme:ApplyCard(frame) -- adiciona corner e stroke
+
+    -- Topbar
+    local topbar = Instance.new("Frame")
+    topbar.Size = UDim2.new(1, 0, 0, 35)
+    topbar.BackgroundColor3 = Theme.Colors.Surface
+    topbar.BackgroundTransparency = Theme.Transparency.Surface
+    topbar.BorderSizePixel = 0
+    topbar.Parent = frame
+
+    -- Título
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(0.8, 0, 1, 0)
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = icon .. " " .. title
+    titleLabel.Font = Theme.Fonts.Bold
+    titleLabel.TextSize = 14
+    titleLabel.TextColor3 = Theme.Colors.Text
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = topbar
+
+    -- Botão fechar (estilo futurista)
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 2.5)
+    closeBtn.BackgroundColor3 = Theme.Colors.Danger
+    closeBtn.BackgroundTransparency = 0.3
+    closeBtn.Text = "✕"
+    closeBtn.Font = Theme.Fonts.Bold
+    closeBtn.TextSize = 14
+    closeBtn.TextColor3 = Theme.Colors.Text
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = topbar
+    local cornerClose = Instance.new("UICorner")
+    cornerClose.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    cornerClose.Parent = closeBtn
+    closeBtn.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+
+    -- Sidebar
+    local sidebar = Instance.new("Frame")
+    sidebar.Size = UDim2.new(0, 45, 1, -40)
+    sidebar.Position = UDim2.new(0, 5, 0, 38)
+    sidebar.BackgroundColor3 = Theme.Colors.Surface
+    sidebar.BackgroundTransparency = Theme.Transparency.Surface
+    sidebar.BorderSizePixel = 0
+    sidebar.Parent = frame
+
+    -- Layout da sidebar (vertical)
+    local sidebarLayout = Instance.new("UIListLayout")
+    sidebarLayout.Padding = UDim.new(0, 6)
+    sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    sidebarLayout.Parent = sidebar
+
+    -- Área de conteúdo
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, -60, 1, -40)
+    content.Position = UDim2.new(0, 55, 0, 38)
+    content.BackgroundTransparency = 1
+    content.Parent = frame
+
+    -- Tabelas de páginas
+    local pages = {}
+    local pageButtons = {}
+
+    function Window:CreatePage(name, pageIcon)
+        local page = Instance.new("ScrollingFrame")
+        page.Size = UDim2.new(1, -5, 1, 0)
+        page.BackgroundTransparency = 1
+        page.ScrollBarThickness = 3
+        page.ScrollBarImageColor3 = Theme.Colors.Stroke
+        page.ScrollBarImageTransparency = 0.5
+        page.CanvasSize = UDim2.new(0, 0, 0, 0)
+        page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        page.Visible = false
+        page.Parent = content
+
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0, 8)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Parent = page
+
+        -- Botão na sidebar
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 35, 0, 35)
+        btn.BackgroundColor3 = Theme.Colors.SurfaceLight
+        btn.BackgroundTransparency = Theme.Transparency.SurfaceLight
+        btn.Text = pageIcon or "●"
+        btn.Font = Theme.Fonts.Bold
+        btn.TextSize = 18
+        btn.TextColor3 = Theme.Colors.TextMuted
+        btn.BorderSizePixel = 0
+        btn.Parent = sidebar
+        local cornerBtn = Instance.new("UICorner")
+        cornerBtn.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        cornerBtn.Parent = btn
+
+        -- Tooltip (opcional)
+        local tooltip = Instance.new("TextLabel")
+        tooltip.Size = UDim2.new(0, 80, 0, 20)
+        tooltip.Position = UDim2.new(1, 5, 0.5, -10)
+        tooltip.BackgroundColor3 = Theme.Colors.Surface
+        tooltip.BackgroundTransparency = Theme.Transparency.Surface
+        tooltip.Text = name
+        tooltip.Font = Theme.Fonts.Default
+        tooltip.TextSize = 10
+        tooltip.TextColor3 = Theme.Colors.Text
+        tooltip.Visible = false
+        tooltip.Parent = btn
+        local cornerTip = Instance.new("UICorner")
+        cornerTip.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        cornerTip.Parent = tooltip
+
+        btn.MouseEnter:Connect(function()
+            tooltip.Visible = true
+        end)
+        btn.MouseLeave:Connect(function()
+            tooltip.Visible = false
+        end)
+
+        table.insert(pages, page)
+        table.insert(pageButtons, btn)
+
+        btn.MouseButton1Click:Connect(function()
+            Window:SwitchPage(page)
+        end)
+
+        return page
+    end
+
+    function Window:SwitchPage(targetPage)
+        for _, p in ipairs(pages) do
+            p.Visible = false
+        end
+        for _, b in ipairs(pageButtons) do
+            b.BackgroundColor3 = Theme.Colors.SurfaceLight
+            b.BackgroundTransparency = Theme.Transparency.SurfaceLight
+            b.TextColor3 = Theme.Colors.TextMuted
+        end
+        targetPage.Visible = true
+        for i, p in ipairs(pages) do
+            if p == targetPage then
+                pageButtons[i].BackgroundColor3 = Theme.Colors.Primary
+                pageButtons[i].BackgroundTransparency = 0.2
+                pageButtons[i].TextColor3 = Theme.Colors.Text
+            end
+        end
+    end
+
+    -- Retorna interface pública
+    return {
+        Frame = frame,
+        Gui = gui,
+        CreatePage = Window.CreatePage,
+        SwitchPage = Window.SwitchPage,
+        Destroy = function()
+            gui:Destroy()
+        end
+    }
+end
+
+-- Cria a janela
+local mainWindow = Window:CreateWindow({
+    title = "Nexus Hub",
+    size = Vector2.new(600, 700),
+    icon = "⚡"
+})
+
+-- Cria uma página "Geral"
+local pageGeneral = mainWindow:CreatePage("Geral", "⌂")
+
+-- Adiciona um toggle
+Widgets:Toggle(pageGeneral, {
+    flag = "AutoFarm",
+    label = "Auto Farm",
+    desc = "Ativa o farm automático",
+    default = false
+})
+
+Widgets:Toggle(pageGeneral, {
+    flag = "Fly",
+    label = "Modo Voo",
+    desc = "Permite voar livremente",
+    default = true
+})
+
+-- Cria outra página
+local pageSettings = mainWindow:CreatePage("Ajustes", "⚙")
+Widgets:Toggle(pageSettings, {
+    flag = "Notifications",
+    label = "Notificações",
+    desc = "Mostrar notificações na tela",
+    default = true
+})
+
+-- Alterna para a primeira página
+mainWindow:SwitchPage(pageGeneral)
+--]]
