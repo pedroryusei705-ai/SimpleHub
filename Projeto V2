@@ -28,6 +28,11 @@ Core.Services.StarterGui = game:GetService("StarterGui")
 
 -- Funções de Flag
 function Core:SetFlag(name, value)
+    -- CORREÇÃO: Impede que flags sejam definidas com tabelas
+    if type(value) == "table" then
+        warn("[Core] Tentativa de definir flag com tabela:", name, value)
+        return
+    end
     self.Flags[name] = value
     self:FireEvent("FlagChanged", name, value)
     if self.Registry[name] then
@@ -48,7 +53,12 @@ function Core:RegisterWidget(name, widget)
         self.Registry[name] = {}
     end
     table.insert(self.Registry[name], widget)
-    widget:Update(self:GetFlag(name, false))
+    local initial = self:GetFlag(name, false)
+    -- CORREÇÃO: Garante que o valor inicial seja do tipo esperado
+    if type(initial) == "table" then
+        initial = false
+    end
+    widget:Update(initial)
 end
 
 -- Eventos
@@ -94,7 +104,6 @@ function Core:Destroy()
 end
 
 function Core:Notify(text, duration)
-    -- Implementação simples de notificação (pode ser expandida)
     local notif = Instance.new("TextLabel")
     notif.Size = UDim2.new(0, 300, 0, 40)
     notif.Position = UDim2.new(0.5, -150, 0, 10)
@@ -191,19 +200,22 @@ function Theme:Tween(object, properties, duration)
     return tween
 end
 
--- Funções adicionais para estilização
 function Theme:ApplyToggle(bg, circle, state)
     bg.BackgroundColor3 = state and self.Colors.Primary or self.Colors.SurfaceLight
     circle.Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
 end
 
+-- CORREÇÃO: Validação de valor numérico
 function Theme:ApplySlider(track, fill, value, min, max)
+    if type(value) ~= "number" then
+        warn("[Theme] ApplySlider recebeu valor não numérico:", value, "usando 0")
+        value = 0
+    end
     local percent = (value - min) / (max - min)
     fill.Size = UDim2.new(percent, 0, 1, 0)
 end
 
 function Theme:ApplyDropdown(button, list, selected)
-    -- Estilo básico para dropdown
     button.BackgroundColor3 = self.Colors.SurfaceLight
     button.TextColor3 = self.Colors.Text
     button.Font = self.Fonts.Default
@@ -290,6 +302,10 @@ function Widgets:Toggle(parent, config)
     end
 
     local initial = Core:GetFlag(flag, default)
+    -- CORREÇÃO: Se for tabela, usa o default
+    if type(initial) == "table" then
+        initial = default
+    end
     setState(initial)
 
     btn.MouseButton1Click:Connect(function()
@@ -380,6 +396,11 @@ function Widgets:Slider(parent, config)
     fillCorner.Parent = fill
 
     local function setValue(value)
+        -- CORREÇÃO: Garante que value seja número
+        if type(value) ~= "number" then
+            warn("[Slider] Valor não numérico para flag", flag, value, "usando default")
+            value = default
+        end
         local clamped = math.clamp(value, min, max)
         Core:SetFlag(flag, clamped)
         Theme:ApplySlider(track, fill, clamped, min, max)
@@ -387,6 +408,9 @@ function Widgets:Slider(parent, config)
     end
 
     local initial = Core:GetFlag(flag, default)
+    if type(initial) == "table" then
+        initial = default
+    end
     setValue(initial)
 
     -- Input detection
@@ -420,6 +444,10 @@ function Widgets:Slider(parent, config)
 
     local widget = {
         Update = function(value)
+            if type(value) ~= "number" then
+                warn("[Slider] Update recebeu valor não numérico:", value)
+                value = default
+            end
             Theme:ApplySlider(track, fill, value, min, max)
             valueLabel.Text = tostring(value)
         end
@@ -536,7 +564,7 @@ function Widgets:Dropdown(parent, config)
     end)
 
     local initial = Core:GetFlag(flag, default)
-    if initial then
+    if initial and type(initial) == "string" then
         button.Text = initial
     end
 
@@ -736,6 +764,7 @@ function ConfigManager:Save(name)
     return true
 end
 
+-- CORREÇÃO: Validação ao carregar
 function ConfigManager:Load(name)
     local path = getPath(name)
     if not isfile(path) then return false end
@@ -745,7 +774,12 @@ function ConfigManager:Load(name)
     if not data then return false end
     for flag, value in pairs(data) do
         if Core.Flags[flag] ~= nil then
-            Core:SetFlag(flag, value)
+            -- CORREÇÃO: Ignora valores que não são números, booleanos ou strings
+            if type(value) == "number" or type(value) == "boolean" or type(value) == "string" then
+                Core:SetFlag(flag, value)
+            else
+                warn("[Config] Ignorando valor inválido para flag:", flag, type(value))
+            end
         end
     end
     return true
@@ -788,7 +822,6 @@ end
 local Combat = {}
 
 function Combat:Init()
-    -- Loops
     Core.Connections.AutoFarm = Core.Services.RunService.Heartbeat:Connect(function()
         if Core:GetFlag("AutoFarm") then
             self:AutoFarmLoop()
@@ -801,7 +834,6 @@ function Combat:Init()
         end
     end)
 
-    -- Reagir a mudanças de flag
     Core:Connect("FlagChanged", function(flag, value)
         if flag == "AutoAttack" then
             if value then self:StartAutoAttack() else self:StopAutoAttack() end
@@ -810,17 +842,14 @@ function Combat:Init()
 end
 
 function Combat:AutoFarmLoop()
-    -- Exemplo: ataca inimigos próximos ou coleta recursos
     local player = Core.Services.Players.LocalPlayer
     if not player or not player.Character then return end
     local root = player.Character:FindFirstChild("HumanoidRootPart")
     if not root then return end
     -- Implemente sua lógica de farm aqui
-    -- Exemplo: encontrar inimigo mais próximo e movimentar-se até ele
 end
 
 function Combat:LockOnLoop()
-    -- Exemplo: manter a câmera focada em um alvo
     local player = Core.Services.Players.LocalPlayer
     if not player then return end
     -- Implemente a lógica de lock-on
@@ -943,9 +972,6 @@ end)
 
 -- Carrega autoload se existir
 ConfigManager:LoadAutoload()
-
--- Salva autoload quando uma configuração é salva (opcional)
--- Exemplo: ConfigManager:SetAutoload("config_123")
 
 -- Ativa a primeira página
 mainWindow:SwitchPage(mainPage)
