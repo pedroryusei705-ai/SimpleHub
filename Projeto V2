@@ -1,5 +1,5 @@
 -- =====================================================
--- RyuHub - Unified Script (Core + Modules + UI)
+-- RyuHub - Unified Script (Full Integration)
 -- =====================================================
 
 -- =====================================================
@@ -14,6 +14,16 @@ local Core = {
     Modules = {},
     Config = {},
     Runtime = {},
+    CONFIG = {  -- constantes usadas pelos módulos
+        VISUAL_NPC_FOLDER = nil,   -- será definido depois
+        TELEPORT_NPC_FOLDER = nil,
+        MAX_DISTANCE = 500,
+        NPC_SCAN_INTERVAL = 0.5,
+        MAX_TELEPORT_DISTANCE = 300,
+        TELEPORT_SPEED = 150,
+        HEIGHT_OFFSET = 2.5,
+        CHAR_CACHE_UPDATE = 0.1,
+    }
 }
 
 -- Inicializa serviços
@@ -94,7 +104,6 @@ function Core:Destroy()
 end
 
 function Core:Notify(text, duration)
-    -- Implementação simples de notificação (pode ser expandida)
     local notif = Instance.new("TextLabel")
     notif.Size = UDim2.new(0, 300, 0, 40)
     notif.Position = UDim2.new(0.5, -150, 0, 10)
@@ -191,7 +200,6 @@ function Theme:Tween(object, properties, duration)
     return tween
 end
 
--- Funções adicionais para estilização
 function Theme:ApplyToggle(bg, circle, state)
     bg.BackgroundColor3 = state and self.Colors.Primary or self.Colors.SurfaceLight
     circle.Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
@@ -203,7 +211,6 @@ function Theme:ApplySlider(track, fill, value, min, max)
 end
 
 function Theme:ApplyDropdown(button, list, selected)
-    -- Estilo básico para dropdown
     button.BackgroundColor3 = self.Colors.SurfaceLight
     button.TextColor3 = self.Colors.Text
     button.Font = self.Fonts.Default
@@ -314,6 +321,7 @@ function Widgets:Slider(parent, config)
     local min = config.min or 0
     local max = config.max or 100
     local default = config.default or 50
+    local precision = config.precision or 1
 
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 0, desc and 70 or 55)
@@ -359,7 +367,6 @@ function Widgets:Slider(parent, config)
         descObj.Parent = container
     end
 
-    -- Track
     local track = Instance.new("Frame")
     track.Size = UDim2.new(1, -20, 0, Theme.Sizes.SliderHeight)
     track.Position = UDim2.new(0, 10, 1, -(Theme.Sizes.SliderHeight + 8))
@@ -381,6 +388,7 @@ function Widgets:Slider(parent, config)
 
     local function setValue(value)
         local clamped = math.clamp(value, min, max)
+        clamped = math.floor(clamped / precision) * precision
         Core:SetFlag(flag, clamped)
         Theme:ApplySlider(track, fill, clamped, min, max)
         valueLabel.Text = tostring(clamped)
@@ -389,7 +397,6 @@ function Widgets:Slider(parent, config)
     local initial = Core:GetFlag(flag, default)
     setValue(initial)
 
-    -- Input detection
     local sliderBtn = Instance.new("TextButton")
     sliderBtn.Size = UDim2.new(1, 0, 1, 0)
     sliderBtn.BackgroundTransparency = 1
@@ -507,7 +514,6 @@ function Widgets:Dropdown(parent, config)
         dropdownList.Visible = false
     end
 
-    -- Populate options
     for _, opt in ipairs(options) do
         local optBtn = Instance.new("TextButton")
         optBtn.Size = UDim2.new(1, 0, 0, 25)
@@ -783,119 +789,1107 @@ function ConfigManager:LoadAutoload()
 end
 
 -- =====================================================
--- 6. COMBAT MODULE
+-- 6. UTILS MODULE
+-- =====================================================
+local Utils = {
+    charCache = { root = nil, humanoid = nil, character = nil, lastUpdate = 0 }
+}
+
+function Utils:disconnectConnection(name)
+    if Core.Connections[name] then
+        Core.Connections[name]:Disconnect()
+        Core.Connections[name] = nil
+    end
+end
+
+function Utils:cleanAllConnections()
+    for name, conn in pairs(Core.Connections) do
+        if conn and conn.Connected then conn:Disconnect() end
+    end
+    table.clear(Core.Connections)
+end
+
+function Utils:getCharComponents()
+    local now = tick()
+    if now - self.charCache.lastUpdate > Core.CONFIG.CHAR_CACHE_UPDATE then
+        local char = Core.Services.Players.LocalPlayer.Character
+        self.charCache.character = char
+        self.charCache.root = char and char:FindFirstChild("HumanoidRootPart")
+        self.charCache.humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        self.charCache.lastUpdate = now
+    end
+    return self.charCache.root, self.charCache.humanoid, self.charCache.character
+end
+
+function Utils:invalidateCharCache()
+    self.charCache.lastUpdate = 0
+end
+
+function Utils:animateToggle(bg, circle, enabled)
+    local TweenService = Core.Services.TweenService
+    TweenService:Create(bg, TweenInfo.new(0.2), {
+        BackgroundColor3 = enabled and Theme.Colors.Primary or Theme.Colors.SurfaceLight
+    }):Play()
+    TweenService:Create(circle, TweenInfo.new(0.2), {
+        Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    }):Play()
+end
+
+function Utils:updateCameraCache()
+    Core.Runtime.currentCamera = workspace.CurrentCamera
+end
+
+Core:RegisterModule("Utils", Utils)
+
+-- =====================================================
+-- 7. NPC CACHE SYSTEM
+-- =====================================================
+local NPCCache = {}
+
+function NPCCache:Init()
+    self.cache = {}
+    self.lastScan = 0
+end
+
+function NPCCache:update()
+    table.clear(self.cache)
+    local root = Utils:getCharComponents()
+    if not root then return end
+    local folder = Core.CONFIG.VISUAL_NPC_FOLDER
+    if not folder then return end
+    local player = Core.Services.Players.LocalPlayer
+    for _, npc in ipairs(folder:GetChildren()) do
+        if npc:IsA("Model") and npc ~= player.Character then
+            local hum = npc:FindFirstChild("Humanoid")
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if hum and npcRoot and hum.Health > 0 then
+                local dist = (root.Position - npcRoot.Position).Magnitude
+                if dist <= Core.CONFIG.MAX_DISTANCE then
+                    table.insert(self.cache, { model = npc, root = npcRoot, humanoid = hum, distance = dist })
+                end
+            end
+        end
+    end
+    table.sort(self.cache, function(a,b) return a.distance < b.distance end)
+end
+
+function NPCCache:findClosest()
+    local now = tick()
+    if now - self.lastScan > Core.CONFIG.NPC_SCAN_INTERVAL then
+        self:update()
+        self.lastScan = now
+    end
+    return self.cache[1] and self.cache[1].model
+end
+
+function NPCCache:isValid(npc)
+    if not npc or not npc.Parent then return false end
+    local hum = npc:FindFirstChild("Humanoid")
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    if not hum or not npcRoot or hum.Health <= 0 then return false end
+    local root = Utils:getCharComponents()
+    if not root then return false end
+    return (root.Position - npcRoot.Position).Magnitude <= Core.CONFIG.MAX_DISTANCE
+end
+
+function NPCCache:getDistance(npc)
+    local root = Utils:getCharComponents()
+    if not root or not npc then return math.huge end
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    if not npcRoot then return math.huge end
+    return (root.Position - npcRoot.Position).Magnitude
+end
+
+Core:RegisterModule("NPCCache", NPCCache)
+
+-- =====================================================
+-- 8. MOVEMENT SYSTEM
+-- =====================================================
+local Movement = {}
+
+function Movement:Init()
+    self.player = Core.Services.Players.LocalPlayer
+end
+
+function Movement:enableNoClip()
+    local char = self.player.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
+    end
+end
+
+function Movement:disableNoClip()
+    local char = self.player.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.CanCollide = true
+        end
+    end
+end
+
+Core:RegisterModule("Movement", Movement)
+
+-- =====================================================
+-- 9. TELEPORT SYSTEM
+-- =====================================================
+local Teleport = {}
+
+function Teleport:Init()
+    self.isTeleporting = false
+end
+
+function Teleport:ultraSmoothTeleport(targetPosition)
+    if self.isTeleporting then return false end
+    local root = Utils:getCharComponents()
+    if not root then return false end
+    self.isTeleporting = true
+    local startPos = root.Position
+    local distance = (targetPosition - startPos).Magnitude
+    if distance < 10 then
+        root.CFrame = CFrame.new(targetPosition)
+        self.isTeleporting = false
+        return true
+    end
+    local CONFIG = Core.CONFIG
+    if distance > CONFIG.MAX_TELEPORT_DISTANCE then
+        local direction = (targetPosition - startPos).Unit
+        local numChunks = math.ceil(distance / CONFIG.MAX_TELEPORT_DISTANCE)
+        for i = 1, numChunks do
+            if not self.isTeleporting then break end
+            local chunkTarget = (i == numChunks) and targetPosition or (startPos + direction * CONFIG.MAX_TELEPORT_DISTANCE * i)
+            local chunkTime = (chunkTarget - root.Position).Magnitude / CONFIG.TELEPORT_SPEED
+            local tween = Core.Services.TweenService:Create(root, TweenInfo.new(chunkTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { CFrame = CFrame.new(chunkTarget) })
+            tween:Play()
+            tween.Completed:Wait()
+            task.wait(0.1)
+        end
+    else
+        local travelTime = distance / CONFIG.TELEPORT_SPEED
+        local tween = Core.Services.TweenService:Create(root, TweenInfo.new(travelTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { CFrame = CFrame.new(targetPosition) })
+        tween:Play()
+        tween.Completed:Wait()
+    end
+    self.isTeleporting = false
+    return true
+end
+
+function Teleport:safeTeleportToNPC(npcName)
+    local root = Utils:getCharComponents()
+    if not root then return false, "Character not found" end
+    local folder = Core.CONFIG.TELEPORT_NPC_FOLDER
+    if not folder then return false, "Teleport folder not set" end
+    for _, npc in ipairs(folder:GetChildren()) do
+        if npc.Name == npcName and npc:IsA("Model") then
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if npcRoot then
+                task.spawn(function()
+                    self:ultraSmoothTeleport(npcRoot.Position + Vector3.new(0, 2, 5))
+                end)
+                return true, "Teleporting..."
+            end
+        end
+    end
+    return false, "NPC not found"
+end
+
+function Teleport:getNPCList()
+    local list = {}
+    local folder = Core.CONFIG.TELEPORT_NPC_FOLDER
+    if not folder then return list end
+    for _, npc in ipairs(folder:GetChildren()) do
+        if npc:IsA("Model") and npc:FindFirstChild("HumanoidRootPart") and not table.find(list, npc.Name) then
+            table.insert(list, npc.Name)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+Core:RegisterModule("Teleport", Teleport)
+
+-- =====================================================
+-- 10. COMBAT SYSTEM (KILL AURA + AUTOFARM + LOCKON + SPEED)
 -- =====================================================
 local Combat = {}
 
 function Combat:Init()
-    -- Loops
+    self.autoAttackRunning = false
+    self.autoAttackThread = nil
+    self.attackCooldown = 0.12
+    self.burstCount = 3
+    self.lockedNPC = nil
+    self.lockedTarget = nil
+
+    -- Conexões principais
     Core.Connections.AutoFarm = Core.Services.RunService.Heartbeat:Connect(function()
         if Core:GetFlag("AutoFarm") then
-            self:AutoFarmLoop()
+            self:autofarmLoop()
         end
     end)
 
     Core.Connections.LockOn = Core.Services.RunService.RenderStepped:Connect(function()
         if Core:GetFlag("LockOn") then
-            self:LockOnLoop()
+            self:lockOnLoop()
         end
     end)
 
-    -- Reagir a mudanças de flag
+    Core.Connections.Speed = Core.Services.RunService.Heartbeat:Connect(function()
+        if Core:GetFlag("Speed") then
+            self:speedLoop()
+        end
+    end)
+
+    -- Reagir a mudanças de flag para AutoAttack
     Core:Connect("FlagChanged", function(flag, value)
         if flag == "AutoAttack" then
-            if value then self:StartAutoAttack() else self:StopAutoAttack() end
+            if value then
+                self:startAutoAttack()
+            else
+                self:stopAutoAttack()
+            end
+        end
+        if flag == "BurstCount" then
+            self.burstCount = value
+        end
+    end)
+
+    -- Inicializa valores padrão
+    self.burstCount = Core:GetFlag("BurstCount", 3)
+    if Core:GetFlag("AutoAttack", false) then
+        self:startAutoAttack()
+    end
+
+    -- Atualiza cache de personagem ao respawnar
+    Core.Services.Players.LocalPlayer.CharacterAdded:Connect(function()
+        Utils:invalidateCharCache()
+        task.wait(0.3)
+        if Core:GetFlag("Speed") then
+            -- reconectar speed loop já está ativo
+        end
+        if Core:GetFlag("AutoAttack") then
+            self:stopAutoAttack()
+            self:startAutoAttack()
         end
     end)
 end
 
-function Combat:AutoFarmLoop()
-    -- Exemplo: ataca inimigos próximos ou coleta recursos
-    local player = Core.Services.Players.LocalPlayer
-    if not player or not player.Character then return end
-    local root = player.Character:FindFirstChild("HumanoidRootPart")
+function Combat:startAutoAttack()
+    if self.autoAttackThread then return end
+    self.autoAttackRunning = true
+    self.autoAttackThread = task.spawn(function()
+        local player = Core.Services.Players.LocalPlayer
+        local char = player.Character or player.CharacterAdded:Wait()
+        local remote = game.ReplicatedStorage:FindFirstChild("Events") and game.ReplicatedStorage.Events:FindFirstChild("CombatEvent")
+        if not remote then
+            warn("CombatEvent not found")
+            return
+        end
+        local weapon = char:FindFirstChild("FistCombat") and char.FistCombat:FindFirstChild("WeaponInfoFolder") and char.FistCombat.WeaponInfoFolder:FindFirstChild("Fist")
+        if not weapon then
+            warn("Weapon not found")
+            return
+        end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+
+        while self.autoAttackRunning do
+            task.wait(self.attackCooldown)
+            local target = self.lockedNPC or self.lockedTarget
+            if not target or not target.Parent then
+                target = NPCCache:findClosest()
+                self.lockedTarget = target
+            end
+            local burst = self.burstCount
+            if burst < 1 then burst = 1 end
+            if target then
+                local npcRoot = target:FindFirstChild("HumanoidRootPart")
+                if npcRoot then
+                    local attackPos = npcRoot.Position
+                    local mode = Core:GetFlag("AutoFarmMode", "Behind")
+                    if mode == "Behind" then
+                        local backVec = -npcRoot.CFrame.LookVector * Core:GetFlag("AutoFarmDistance", 10)
+                        attackPos = npcRoot.Position + backVec + Vector3.new(0, Core.CONFIG.HEIGHT_OFFSET, 0)
+                    elseif mode == "Above" then
+                        attackPos = npcRoot.Position + Vector3.new(0, Core:GetFlag("AutoFarmDistance", 10), 0)
+                    end
+                    local cframe = CFrame.new(attackPos, npcRoot.Position)
+                    for _ = 1, burst do
+                        remote:FireServer(1, weapon, cframe, true, weapon)
+                        remote:FireServer(2, weapon, cframe, true, weapon)
+                        remote:FireServer(3, weapon, cframe, true, weapon)
+                        remote:FireServer(4, weapon, cframe, true, weapon)
+                    end
+                end
+            else
+                local cframe = root.CFrame * CFrame.new(0, 0, -3)
+                for _ = 1, burst do
+                    remote:FireServer(1, weapon, cframe, true, weapon)
+                    remote:FireServer(2, weapon, cframe, true, weapon)
+                    remote:FireServer(3, weapon, cframe, true, weapon)
+                    remote:FireServer(4, weapon, cframe, true, weapon)
+                end
+            end
+        end
+    end)
+end
+
+function Combat:stopAutoAttack()
+    self.autoAttackRunning = false
+    if self.autoAttackThread then
+        task.cancel(self.autoAttackThread)
+        self.autoAttackThread = nil
+    end
+end
+
+function Combat:lockOnLoop()
+    if not Core:GetFlag("LockOn") then return end
+    local camera = Core.Runtime.currentCamera or workspace.CurrentCamera
+    if not camera then return end
+    local target = self.lockedTarget
+    if Core:GetFlag("AutoFarm") and self.lockedNPC then target = self.lockedNPC end
+    if not target or not target.Parent then
+        target = NPCCache:findClosest()
+        self.lockedTarget = target
+    end
+    if target then
+        local npcRoot = target:FindFirstChild("HumanoidRootPart")
+        if npcRoot then
+            local currentPos = camera.CFrame.Position
+            local targetPos = npcRoot.Position
+            local lookAt = CFrame.new(currentPos, targetPos)
+            camera.CFrame = camera.CFrame:Lerp(lookAt, 0.35)
+        end
+    end
+end
+
+function Combat:autofarmLoop()
+    if not Core:GetFlag("AutoFarm") then return end
+    local root = Utils:getCharComponents()
     if not root then return end
-    -- Implemente sua lógica de farm aqui
-    -- Exemplo: encontrar inimigo mais próximo e movimentar-se até ele
+    if not NPCCache:isValid(self.lockedNPC) then
+        self.lockedNPC = NPCCache:findClosest()
+    end
+    local npc = self.lockedNPC
+    if not npc then return end
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    if not npcRoot then
+        self.lockedNPC = nil
+        return
+    end
+    root.AssemblyLinearVelocity = Vector3.zero
+    root.AssemblyAngularVelocity = Vector3.zero
+    local dist = Core:GetFlag("AutoFarmDistance", 10)
+    local mode = Core:GetFlag("AutoFarmMode", "Behind")
+    if mode == "Above" then
+        local targetPos = npcRoot.Position + Vector3.new(0, dist, 0)
+        root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+    else
+        local backVec = -npcRoot.CFrame.LookVector * dist
+        local upVec = Vector3.new(0, Core.CONFIG.HEIGHT_OFFSET, 0)
+        local targetPos = npcRoot.Position + backVec + upVec
+        root.CFrame = CFrame.new(targetPos, npcRoot.Position)
+    end
 end
 
-function Combat:LockOnLoop()
-    -- Exemplo: manter a câmera focada em um alvo
-    local player = Core.Services.Players.LocalPlayer
-    if not player then return end
-    -- Implemente a lógica de lock-on
+function Combat:speedLoop()
+    if not Core:GetFlag("Speed") then return end
+    local root, hum = Utils:getCharComponents()
+    if root and hum then
+        local moveDir = hum.MoveDirection
+        if moveDir.Magnitude > 0 then
+            local curY = root.AssemblyLinearVelocity.Y
+            local speedVal = Core:GetFlag("SpeedValue", 50)
+            root.AssemblyLinearVelocity = (moveDir.Unit * speedVal) + Vector3.new(0, curY, 0)
+        end
+    end
 end
 
-function Combat:StartAutoAttack()
-    -- Inicia ataque automático
-end
-
-function Combat:StopAutoAttack()
-    -- Para ataque automático
-end
-
--- =====================================================
--- 7. INITIALIZATION
--- =====================================================
--- Registra módulos
 Core:RegisterModule("Combat", Combat)
 
--- Inicializa ConfigManager
-ConfigManager:Init()
+-- =====================================================
+-- 11. ESP SYSTEM
+-- =====================================================
+local ESP = {}
 
--- Cria a janela principal
+function ESP:Init()
+    self.espObjects = {}
+    self.tracerLines = {}
+    self.healthBarObjects = {}
+    self.playerESPObjects = {}
+    self.fovDrawingCircle = nil
+end
+
+function ESP:createESP(npc)
+    if self.espObjects[npc] then return end
+    if not npc:FindFirstChild("HumanoidRootPart") then return end
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "CyberHighlight"
+    highlight.Adornee = npc
+    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Parent = npc
+    self.espObjects[npc] = highlight
+end
+
+function ESP:removeESP(npc)
+    if self.espObjects[npc] then
+        self.espObjects[npc]:Destroy()
+        self.espObjects[npc] = nil
+    end
+end
+
+function ESP:clearAllESP()
+    for _, esp in pairs(self.espObjects) do
+        if esp then esp:Destroy() end
+    end
+    table.clear(self.espObjects)
+end
+
+function ESP:createTracer(npc)
+    if self.tracerLines[npc] then return end
+    if not npc:FindFirstChild("HumanoidRootPart") then return end
+    local line = Drawing.new("Line")
+    line.Visible = true
+    line.Color = Color3.new(0, 1, 0)
+    line.Thickness = 2
+    line.Transparency = 0.7
+    self.tracerLines[npc] = line
+end
+
+function ESP:updateTracers()
+    if not Core:GetFlag("Tracers") then return end
+    local cam = Core.Runtime.currentCamera or workspace.CurrentCamera
+    if not cam then return end
+    local screenSize = cam.ViewportSize
+    local centerX = screenSize.X / 2
+    local centerY = screenSize.Y
+    for npc, line in pairs(self.tracerLines) do
+        if npc and npc.Parent then
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if npcRoot then
+                local npcPos, onScreen = cam:WorldToViewportPoint(npcRoot.Position)
+                if onScreen then
+                    line.From = Vector2.new(centerX, centerY)
+                    line.To = Vector2.new(npcPos.X, npcPos.Y)
+                    line.Visible = true
+                else
+                    line.Visible = false
+                end
+            else
+                line.Visible = false
+            end
+        else
+            line.Visible = false
+        end
+    end
+end
+
+function ESP:removeTracer(npc)
+    if self.tracerLines[npc] then
+        self.tracerLines[npc]:Remove()
+        self.tracerLines[npc] = nil
+    end
+end
+
+function ESP:clearAllTracers()
+    for _, line in pairs(self.tracerLines) do
+        if line then line:Remove() end
+    end
+    table.clear(self.tracerLines)
+end
+
+function ESP:createHealthBar(npc)
+    if self.healthBarObjects[npc] then return end
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    local npcHum = npc:FindFirstChild("Humanoid")
+    if not npcRoot or not npcHum then return end
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "CyberHealthBar"
+    billboard.Adornee = npcRoot
+    billboard.Size = UDim2.new(4, 0, 0.5, 0)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = npc
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    bg.BorderSizePixel = 0
+    bg.Parent = billboard
+    local bar = Instance.new("Frame")
+    bar.Name = "HealthBar"
+    bar.Size = UDim2.new(npcHum.Health / npcHum.MaxHealth, 0, 1, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    bar.BorderSizePixel = 0
+    bar.Parent = bg
+    local txt = Instance.new("TextLabel")
+    txt.Name = "HealthText"
+    txt.Size = UDim2.new(1, 0, 1, 0)
+    txt.BackgroundTransparency = 1
+    txt.Text = math.floor(npcHum.Health) .. "/" .. math.floor(npcHum.MaxHealth)
+    txt.TextColor3 = Color3.fromRGB(255, 255, 255)
+    txt.TextScaled = true
+    txt.Font = Enum.Font.GothamBold
+    txt.Parent = bg
+    local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 4); c1.Parent = bg
+    local c2 = Instance.new("UICorner"); c2.CornerRadius = UDim.new(0, 4); c2.Parent = bar
+    self.healthBarObjects[npc] = billboard
+end
+
+function ESP:updateHealthBar(npc)
+    local gui = self.healthBarObjects[npc]
+    if not gui then return end
+    local npcHum = npc:FindFirstChild("Humanoid")
+    if not npcHum then return end
+    local frame = gui:FindFirstChild("Frame")
+    local bar = frame and frame:FindFirstChild("HealthBar")
+    local txt = frame and frame:FindFirstChild("HealthText")
+    if not bar or not txt then return end
+    local pct = npcHum.Health / npcHum.MaxHealth
+    bar.Size = UDim2.new(pct, 0, 1, 0)
+    txt.Text = math.floor(npcHum.Health) .. "/" .. math.floor(npcHum.MaxHealth)
+    if pct > 0.5 then
+        bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    elseif pct > 0.25 then
+        bar.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+    else
+        bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    end
+end
+
+function ESP:removeHealthBar(npc)
+    if self.healthBarObjects[npc] then
+        self.healthBarObjects[npc]:Destroy()
+        self.healthBarObjects[npc] = nil
+    end
+end
+
+function ESP:clearAllHealthBars()
+    for _, gui in pairs(self.healthBarObjects) do
+        if gui then gui:Destroy() end
+    end
+    table.clear(self.healthBarObjects)
+end
+
+function ESP:updatePlayerESP()
+    local player = Core.Services.Players.LocalPlayer
+    if not Core:GetFlag("PlayerESP") then
+        for _, esp in pairs(self.playerESPObjects) do
+            if esp then esp:Destroy() end
+        end
+        table.clear(self.playerESPObjects)
+        return
+    end
+    for _, otherPlayer in ipairs(Core.Services.Players:GetPlayers()) do
+        if otherPlayer ~= player and otherPlayer.Character then
+            local char = otherPlayer.Character
+            if not self.playerESPObjects[otherPlayer] then
+                local hl = Instance.new("Highlight")
+                hl.Name = "PlayerHighlight"
+                hl.Adornee = char
+                hl.FillColor = Color3.fromRGB(0, 255, 255)
+                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                hl.FillTransparency = 0.7
+                hl.OutlineTransparency = 0
+                hl.Parent = char
+                self.playerESPObjects[otherPlayer] = hl
+            end
+        end
+    end
+end
+
+function ESP:createFOVCircle()
+    if self.fovDrawingCircle then return end
+    local c = Drawing.new("Circle")
+    c.Visible = true
+    c.Thickness = 2
+    c.Color = Color3.new(1, 1, 1)
+    c.Transparency = 0.7
+    c.NumSides = 60
+    c.Radius = 150
+    c.Filled = false
+    self.fovDrawingCircle = c
+end
+
+function ESP:updateFOVCircle()
+    if not Core:GetFlag("FOV") or not self.fovDrawingCircle then return end
+    local cam = Core.Runtime.currentCamera or workspace.CurrentCamera
+    if not cam then return end
+    local sz = cam.ViewportSize
+    self.fovDrawingCircle.Position = Vector2.new(sz.X / 2, sz.Y / 2)
+    self.fovDrawingCircle.Visible = true
+end
+
+function ESP:removeFOVCircle()
+    if self.fovDrawingCircle then
+        self.fovDrawingCircle:Remove()
+        self.fovDrawingCircle = nil
+    end
+end
+
+function ESP:updateVisuals()
+    if not (Core:GetFlag("ESP") or Core:GetFlag("Tracers") or Core:GetFlag("HealthBars")) then return end
+    local player = Core.Services.Players.LocalPlayer
+    local folder = Core.CONFIG.VISUAL_NPC_FOLDER
+    if not folder then return end
+    for _, npc in ipairs(folder:GetChildren()) do
+        if npc:IsA("Model") and npc ~= player.Character then
+            local hum = npc:FindFirstChild("Humanoid")
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if hum and npcRoot and hum.Health > 0 then
+                if Core:GetFlag("ESP") then self:createESP(npc) else self:removeESP(npc) end
+                if Core:GetFlag("Tracers") then self:createTracer(npc) else self:removeTracer(npc) end
+                if Core:GetFlag("HealthBars") then
+                    self:createHealthBar(npc)
+                    self:updateHealthBar(npc)
+                else
+                    self:removeHealthBar(npc)
+                end
+            else
+                self:removeESP(npc); self:removeTracer(npc); self:removeHealthBar(npc)
+            end
+        end
+    end
+end
+
+function ESP:updateTracersAndFOV()
+    if Core:GetFlag("Tracers") then self:updateTracers() end
+    if Core:GetFlag("FOV") then self:updateFOVCircle() end
+end
+
+Core:RegisterModule("ESP", ESP)
+
+-- =====================================================
+-- 12. INPUT SYSTEM
+-- =====================================================
+local Input = {}
+
+function Input:Init()
+    local player = Core.Services.Players.LocalPlayer
+
+    Core.Services.UserInputService.JumpRequest:Connect(function()
+        if Core:GetFlag("InfiniteJump") then
+            local _, hum = Utils:getCharComponents()
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end)
+
+    Core.Services.UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+
+        if input.KeyCode == Enum.KeyCode.F1 then
+            local visible = not Core:GetFlag("GuiVisible", true)
+            Core:SetFlag("GuiVisible", visible)
+            if Core.Window and Core.Window.Frame then
+                Core.Window.Frame.Visible = visible
+            end
+        elseif input.KeyCode == Enum.KeyCode.KeypadOne then
+            local newVal = not Core:GetFlag("AutoAttack")
+            Core:SetFlag("AutoAttack", newVal)
+            if newVal then Combat:startAutoAttack() else Combat:stopAutoAttack() end
+        elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
+            Core:SetFlag("AutoFarm", not Core:GetFlag("AutoFarm"))
+        elseif input.KeyCode == Enum.KeyCode.N then
+            Core:SetFlag("Speed", not Core:GetFlag("Speed"))
+        elseif input.KeyCode == Enum.KeyCode.Y then
+            Core:SetFlag("InfiniteJump", not Core:GetFlag("InfiniteJump"))
+        elseif input.KeyCode == Enum.KeyCode.KeypadZero then
+            Core:SetFlag("ESP", not Core:GetFlag("ESP"))
+        elseif input.KeyCode == Enum.KeyCode.KeypadThree then
+            Core:SetFlag("HealthBars", not Core:GetFlag("HealthBars"))
+        end
+    end)
+
+    player.CharacterAdded:Connect(function()
+        Utils:invalidateCharCache()
+        task.wait(0.3)
+        if Core:GetFlag("Speed") then
+            -- reconectar loop já está ativo via Combat
+        end
+        if Core:GetFlag("AutoAttack") then
+            Combat:stopAutoAttack()
+            Combat:startAutoAttack()
+        end
+    end)
+end
+
+Core:RegisterModule("Input", Input)
+
+-- =====================================================
+-- 13. DESERT RAID PAGE BUILDER
+-- =====================================================
+local function buildDesertRaidPage(parentPage)
+    -- Cabeçalho
+    local header = Instance.new("TextLabel")
+    header.Size = UDim2.new(1, 0, 0, 30)
+    header.BackgroundTransparency = 1
+    header.Text = "🏜️ Desert Raid"
+    header.Font = Theme.Fonts.Bold
+    header.TextSize = 14
+    header.TextColor3 = Theme.Colors.Text
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Parent = parentPage
+
+    -- Container para botões de ClickDetector
+    local clickContainer = Instance.new("Frame")
+    clickContainer.Size = UDim2.new(1, 0, 0, 140)
+    clickContainer.BackgroundColor3 = Theme.Colors.Surface
+    clickContainer.BorderSizePixel = 0
+    clickContainer.Parent = parentPage
+    Theme:ApplyCard(clickContainer)
+
+    local clickLayout = Instance.new("UIListLayout")
+    clickLayout.FillDirection = Enum.FillDirection.Vertical
+    clickLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    clickLayout.Padding = UDim.new(0, 6)
+    clickLayout.Parent = clickContainer
+    local clickPadding = Instance.new("UIPadding")
+    clickPadding.PaddingTop = UDim.new(0, 8)
+    clickPadding.Parent = clickContainer
+
+    -- Botão Pedestal
+    local pedestalBtn = Instance.new("TextButton")
+    pedestalBtn.Size = UDim2.new(0.9, 0, 0, 30)
+    pedestalBtn.Text = "🔮 Ativar Pedestal"
+    pedestalBtn.Font = Theme.Fonts.Default
+    pedestalBtn.TextSize = 12
+    pedestalBtn.TextColor3 = Theme.Colors.Text
+    Theme:ApplyButton(pedestalBtn, Color3.fromRGB(200, 180, 80))
+    pedestalBtn.Parent = clickContainer
+    pedestalBtn.MouseButton1Click:Connect(function()
+        local cd = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Pedestal") and workspace.DesertedDesert.Pedestal:FindFirstChild("ClickDetector")
+        if cd then
+            fireclickdetector(cd, 0, 0)
+            pedestalBtn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+            task.wait(0.3)
+            pedestalBtn.BackgroundColor3 = Color3.fromRGB(200, 180, 80)
+        else
+            pedestalBtn.Text = "❌ Não encontrado"
+            task.wait(1)
+            pedestalBtn.Text = "🔮 Ativar Pedestal"
+        end
+    end)
+
+    -- Botão Vending Machine
+    local vendingBtn = Instance.new("TextButton")
+    vendingBtn.Size = UDim2.new(0.9, 0, 0, 30)
+    vendingBtn.Text = "🏪 Ativar Vending Machine"
+    vendingBtn.Font = Theme.Fonts.Default
+    vendingBtn.TextSize = 12
+    vendingBtn.TextColor3 = Theme.Colors.Text
+    Theme:ApplyButton(vendingBtn, Color3.fromRGB(80, 180, 200))
+    vendingBtn.Parent = clickContainer
+    vendingBtn.MouseButton1Click:Connect(function()
+        local cd = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("VendingMachineClickPart") and workspace.DesertedDesert.VendingMachineClickPart:FindFirstChild("ClickDetector")
+        if cd then
+            fireclickdetector(cd, 0, 0)
+            vendingBtn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+            task.wait(0.3)
+            vendingBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 200)
+        else
+            vendingBtn.Text = "❌ Não encontrado"
+            task.wait(1)
+            vendingBtn.Text = "🏪 Ativar Vending Machine"
+        end
+    end)
+
+    -- Botão Dragão
+    local dragonBtn = Instance.new("TextButton")
+    dragonBtn.Size = UDim2.new(0.9, 0, 0, 30)
+    dragonBtn.Text = "🐉 Ativar Dragão"
+    dragonBtn.Font = Theme.Fonts.Default
+    dragonBtn.TextSize = 12
+    dragonBtn.TextColor3 = Theme.Colors.Text
+    Theme:ApplyButton(dragonBtn, Color3.fromRGB(200, 80, 80))
+    dragonBtn.Parent = clickContainer
+    dragonBtn.MouseButton1Click:Connect(function()
+        local cd = workspace:FindFirstChild("DragonBossStuff") and workspace.DragonBossStuff:FindFirstChild("ClickPart") and workspace.DragonBossStuff.ClickPart:FindFirstChild("ClickDetector")
+        if cd then
+            fireclickdetector(cd, 0, 0)
+            dragonBtn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+            task.wait(0.3)
+            dragonBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
+        else
+            dragonBtn.Text = "❌ Não encontrado"
+            task.wait(1)
+            dragonBtn.Text = "🐉 Ativar Dragão"
+        end
+    end)
+
+    -- Seção de teletransporte para spawns
+    local spawnSection = Instance.new("Frame")
+    spawnSection.Size = UDim2.new(1, 0, 0, 30)
+    spawnSection.BackgroundTransparency = 1
+    spawnSection.Parent = parentPage
+    local spawnLabel = Instance.new("TextLabel")
+    spawnLabel.Size = UDim2.new(1, -20, 1, 0)
+    spawnLabel.Position = UDim2.new(0, 10, 0, 0)
+    spawnLabel.BackgroundTransparency = 1
+    spawnLabel.Text = "📍 Teletransporte para Spawns"
+    spawnLabel.Font = Theme.Fonts.Bold
+    spawnLabel.TextSize = 11
+    spawnLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    spawnLabel.TextXAlignment = Enum.TextXAlignment.Left
+    spawnLabel.Parent = spawnSection
+
+    local spawnRefreshBtn = Instance.new("TextButton")
+    spawnRefreshBtn.Size = UDim2.new(1, -20, 0, 30)
+    spawnRefreshBtn.Text = "🔄 Atualizar Spawns"
+    spawnRefreshBtn.Font = Theme.Fonts.Default
+    spawnRefreshBtn.TextSize = 12
+    spawnRefreshBtn.TextColor3 = Theme.Colors.Text
+    Theme:ApplyButton(spawnRefreshBtn, Color3.fromRGB(80, 200, 120))
+    spawnRefreshBtn.Parent = parentPage
+
+    local spawnListFrame = Instance.new("ScrollingFrame")
+    spawnListFrame.Size = UDim2.new(1, 0, 0, 150)
+    spawnListFrame.BackgroundColor3 = Theme.Colors.Surface
+    spawnListFrame.BorderSizePixel = 0
+    spawnListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    spawnListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    spawnListFrame.ScrollBarThickness = 3
+    spawnListFrame.Parent = parentPage
+    Theme:ApplyCard(spawnListFrame)
+    local spawnListLayout = Instance.new("UIListLayout")
+    spawnListLayout.Padding = UDim.new(0, 4)
+    spawnListLayout.Parent = spawnListFrame
+
+    local function teleportWithNoClip(targetPos)
+        if Teleport.isTeleporting then return end
+        Movement:enableNoClip()
+        Teleport:ultraSmoothTeleport(targetPos)
+        task.wait(0.1)
+        while Teleport.isTeleporting do task.wait(0.1) end
+        Movement:disableNoClip()
+    end
+
+    local function populateSpawnList()
+        for _, c in ipairs(spawnListFrame:GetChildren()) do
+            if c:IsA("TextButton") then c:Destroy() end
+        end
+        local positions = {}
+        -- ArtifactSpawns
+        local artifactFolder = workspace:FindFirstChild("LibraryDungeon") and workspace.LibraryDungeon:FindFirstChild("ArtifactSpawns")
+        if artifactFolder then
+            for _, part in ipairs(artifactFolder:GetChildren()) do
+                if part:IsA("BasePart") then
+                    table.insert(positions, { name = "ArtifactSpawn", part = part })
+                end
+            end
+        end
+        -- Wendigo BossSpawnPart
+        local wendigoPart = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Wendigo") and workspace.DesertedDesert.Wendigo:FindFirstChild("BossSpawnPart")
+        if wendigoPart and wendigoPart:IsA("BasePart") then
+            table.insert(positions, { name = "Wendigo Spawn", part = wendigoPart })
+        end
+
+        if #positions == 0 then
+            local empty = Instance.new("TextLabel")
+            empty.Size = UDim2.new(1, -10, 0, 30)
+            empty.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+            empty.Text = "   Nenhum spawn encontrado"
+            empty.Font = Theme.Fonts.Default
+            empty.TextSize = 11
+            empty.TextColor3 = Color3.fromRGB(150, 150, 170)
+            empty.TextXAlignment = Enum.TextXAlignment.Left
+            empty.Parent = spawnListFrame
+            local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 4); corner.Parent = empty
+        else
+            table.sort(positions, function(a,b)
+                if a.name == b.name then return a.part.Name < b.part.Name end
+                return a.name < b.name
+            end)
+            local index = 0
+            for _, data in ipairs(positions) do
+                index = index + 1
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, -10, 0, 28)
+                btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+                local label = data.name
+                if data.name == "ArtifactSpawn" then
+                    label = label .. " #" .. index
+                end
+                btn.Text = "   📍 " .. label
+                btn.Font = Theme.Fonts.Default
+                btn.TextSize = 11
+                btn.TextColor3 = Theme.Colors.Text
+                btn.TextXAlignment = Enum.TextXAlignment.Left
+                btn.BorderSizePixel = 0
+                btn.Parent = spawnListFrame
+                local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 4); corner.Parent = btn
+                btn.MouseButton1Click:Connect(function()
+                    local targetPos = data.part.Position + Vector3.new(0, 2, 5)
+                    task.spawn(function() teleportWithNoClip(targetPos) end)
+                    btn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+                    task.wait(0.3)
+                    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+                end)
+            end
+        end
+        spawnListFrame.CanvasSize = UDim2.new(0, 0, 0, #positions * 32 + 10)
+    end
+
+    spawnRefreshBtn.MouseButton1Click:Connect(populateSpawnList)
+    task.spawn(populateSpawnList)
+
+    -- Toggles e Sliders específicos da página (já estarão na UI, mas adicionamos alguns)
+    -- Usamos Widgets para criar toggles e sliders
+    Widgets:Toggle(parentPage, {
+        flag = "AutoFarm",
+        label = "Auto Farm",
+        desc = "Farmar automaticamente",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "LockOn",
+        label = "Lock On",
+        desc = "Travar mira no alvo",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "AutoAttack",
+        label = "Auto Attack",
+        desc = "Atacar automaticamente",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "Speed",
+        label = "Speed",
+        desc = "Aumentar velocidade",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "InfiniteJump",
+        label = "Infinite Jump",
+        desc = "Pulo infinito",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "NoClip",
+        label = "NoClip",
+        desc = "Atravessar paredes",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "ESP",
+        label = "ESP",
+        desc = "Destacar NPCs",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "Tracers",
+        label = "Tracers",
+        desc = "Linhas para NPCs",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "HealthBars",
+        label = "Health Bars",
+        desc = "Barras de vida dos NPCs",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "PlayerESP",
+        label = "Player ESP",
+        desc = "Destacar jogadores",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "FOV",
+        label = "FOV Circle",
+        desc = "Círculo de mira",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "FullBright",
+        label = "Full Bright",
+        desc = "Iluminação total",
+        default = false
+    })
+    Widgets:Toggle(parentPage, {
+        flag = "FPSBooster",
+        label = "FPS Booster",
+        desc = "Otimizar gráficos",
+        default = false
+    })
+
+    Widgets:Slider(parentPage, {
+        flag = "AutoFarmDistance",
+        label = "Distância Farm",
+        desc = "Distância do NPC",
+        min = 0,
+        max = 30,
+        default = 10,
+        precision = 1
+    })
+    Widgets:Slider(parentPage, {
+        flag = "SpeedValue",
+        label = "Velocidade",
+        desc = "Valor da velocidade",
+        min = 16,
+        max = 200,
+        default = 50,
+        precision = 1
+    })
+    Widgets:Slider(parentPage, {
+        flag = "BurstCount",
+        label = "Burst Count",
+        desc = "Quantos ataques por vez",
+        min = 1,
+        max = 10,
+        default = 3,
+        precision = 1
+    })
+
+    Widgets:Dropdown(parentPage, {
+        flag = "AutoFarmMode",
+        label = "Modo Farm",
+        desc = "Posição relativa ao NPC",
+        options = {"Behind", "Above"},
+        default = "Behind"
+    })
+end
+
+-- =====================================================
+-- 14. INITIALIZATION
+-- =====================================================
+
+-- Configurar pastas de NPC (ajuste conforme o jogo)
+Core.CONFIG.VISUAL_NPC_FOLDER = workspace:FindFirstChild("VisualNPCs") or workspace
+Core.CONFIG.TELEPORT_NPC_FOLDER = workspace:FindFirstChild("NPCs") or workspace
+
+-- Inicializar módulos que precisam de Init (já foram registrados com Init, mas alguns não têm)
+-- O Core:RegisterModule já chama Init se existir, então está feito.
+
+-- Criar a janela principal
 local mainWindow = Window:CreateWindow({
     title = "RyuHub",
     size = Vector2.new(600, 700),
     icon = "⚡"
 })
 
--- Cria páginas
+-- Criar páginas
 local mainPage = mainWindow:CreatePage("Main", "🏠")
-local combatPage = mainWindow:CreatePage("Combat", "⚔️")
+local desertPage = mainWindow:CreatePage("Desert", "🏜️")
 local configPage = mainWindow:CreatePage("Config", "⚙️")
 
--- Adiciona widgets à página principal
+-- Adicionar widgets à página principal (exemplo)
 Widgets:Toggle(mainPage, {
-    flag = "AutoFarm",
-    label = "Auto Farm",
-    desc = "Farmar automaticamente",
-    default = false
+    flag = "GuiVisible",
+    label = "GUI Visível",
+    desc = "Mostrar/ocultar interface",
+    default = true
 })
 
-Widgets:Toggle(mainPage, {
-    flag = "LockOn",
-    label = "Lock On",
-    desc = "Travar mira no alvo",
-    default = false
-})
+-- Construir página Desert Raid
+buildDesertRaidPage(desertPage)
 
-Widgets:Toggle(mainPage, {
-    flag = "AutoAttack",
-    label = "Auto Attack",
-    desc = "Atacar automaticamente",
-    default = false
-})
-
--- Página de combate
-Widgets:Slider(combatPage, {
-    flag = "AttackRange",
-    label = "Alcance de Ataque",
-    desc = "Distância máxima para atacar",
-    min = 10,
-    max = 100,
-    default = 50
-})
-
-Widgets:Dropdown(combatPage, {
-    flag = "TargetMode",
-    label = "Modo de Alvo",
-    desc = "Seleciona a prioridade de alvo",
-    options = {"Closest", "Lowest HP", "Random"},
-    default = "Closest"
-})
-
--- Página de configurações
+-- Página de configurações (já existente no exemplo)
 Widgets:Dropdown(configPage, {
     flag = "ConfigSelect",
     label = "Carregar Config",
@@ -904,7 +1898,6 @@ Widgets:Dropdown(configPage, {
     default = ConfigManager:List()[1]
 })
 
--- Botão para salvar configuração atual
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -20, 0, 35)
 saveBtn.Position = UDim2.new(0, 10, 0, 10)
@@ -915,7 +1908,6 @@ saveBtn.MouseButton1Click:Connect(function()
     local name = "config_" .. os.time()
     if ConfigManager:Save(name) then
         Core:Notify("Configuração salva como: " .. name)
-        -- Atualiza dropdown
         local dropdown = Core.Registry["ConfigSelect"]
         if dropdown then
             dropdown:Update(ConfigManager:List()[1])
@@ -925,7 +1917,6 @@ saveBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Botão para carregar selecionado
 local loadBtn = Instance.new("TextButton")
 loadBtn.Size = UDim2.new(1, -20, 0, 35)
 loadBtn.Position = UDim2.new(0, 10, 0, 55)
@@ -941,13 +1932,20 @@ loadBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Carrega autoload se existir
+-- Carregar autoload
 ConfigManager:LoadAutoload()
 
--- Salva autoload quando uma configuração é salva (opcional)
--- Exemplo: ConfigManager:SetAutoload("config_123")
-
--- Ativa a primeira página
+-- Ativar primeira página
 mainWindow:SwitchPage(mainPage)
 
+-- Definir visibilidade inicial da GUI
+local guiVisible = Core:GetFlag("GuiVisible", true)
+if Core.Window and Core.Window.Frame then
+    Core.Window.Frame.Visible = guiVisible
+end
+
 print("RyuHub carregado com sucesso!")
+
+-- =====================================================
+-- FIM
+-- =====================================================
