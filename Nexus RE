@@ -742,7 +742,7 @@ end
 print("[TargetManager] Carregado!")
 
 -- ============================================================
--- COMBAT
+-- COMBAT (com limite de distância no AutoFarm)
 -- ============================================================
 local Combat = {}
 
@@ -896,25 +896,43 @@ function Combat:LockOnLoop()
     camera.CFrame = camera.CFrame:Lerp(lookAt, 0.35)
 end
 
+-- AUTOFARM COM LIMITE DE DISTÂNCIA (30 studs) e ignora players
 function Combat:AutoFarmLoop()
     local root = self:getPlayerRoot()
     if not root then return end
+    
     local target = TargetManager:getTarget()
     if not target then return end
+    
+    -- Verifica se é um jogador (ignora)
+    if Core.Services.Players:GetPlayerFromCharacter(target) then
+        return
+    end
+    
     local npcRoot = target:FindFirstChild("HumanoidRootPart")
     if not npcRoot then return end
-
+    
+    local hum = target:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+    
+    -- Limite máximo de distância para o AutoFarm (30 studs)
+    local distance = (root.Position - npcRoot.Position).Magnitude
+    local MAX_AUTOFARM_DISTANCE = 30  -- valor fixo, pode ser ajustado
+    if distance > MAX_AUTOFARM_DISTANCE then
+        return  -- não teleporta para NPCs muito longe
+    end
+    
     root.AssemblyLinearVelocity = Vector3.zero
     root.AssemblyAngularVelocity = Vector3.zero
-
+    
     local mode = Core:GetFlag("AutofarmMode", "Behind")
-    local distance = Core:GetFlag("AutofarmDistance", 3)
-
+    local dist = Core:GetFlag("AutofarmDistance", 3)
+    
     if mode == "Above" then
-        local targetPos = npcRoot.Position + Vector3.new(0, distance, 0)
+        local targetPos = npcRoot.Position + Vector3.new(0, dist, 0)
         root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
     else
-        local backVec = -npcRoot.CFrame.LookVector * distance
+        local backVec = -npcRoot.CFrame.LookVector * dist
         local upVec = Vector3.new(0, 2.5, 0)
         local targetPos = npcRoot.Position + backVec + upVec
         root.CFrame = CFrame.new(targetPos, npcRoot.Position)
@@ -1383,7 +1401,7 @@ Core:RegisterModule("ESP", ESP)
 print("[ESP] Carregado!")
 
 -- ============================================================
--- VISUAL (corrigido: NoClip agora desativa corretamente)
+-- VISUAL
 -- ============================================================
 local Visual = {}
 
@@ -1401,7 +1419,6 @@ function Visual:Init()
     originalAmbient = Lighting.Ambient
     originalOutdoorAmbient = Lighting.OutdoorAmbient
 
-    -- Escuta mudanças nas flags
     Core:Connect("FlagChanged", function(flag, value)
         if flag == "FullBright" then
             self:SetFullBright(value)
@@ -1412,19 +1429,16 @@ function Visual:Init()
         end
     end)
 
-    -- Aplica estados iniciais
     self:SetFullBright(Core:GetFlag("FullBright", false))
     self:SetFog(Core:GetFlag("RemoveFog", false))
     self:ApplyNoClip(Core:GetFlag("NoClip", false))
 
-    -- Loop para manter NoClip ativo (caso o personagem mude ou partes sejam adicionadas)
     Core.Connections.NoClip = Core.Services.RunService.Heartbeat:Connect(function()
         if Core:GetFlag("NoClip", false) then
             self:ApplyNoClip(true)
         end
     end)
 
-    -- Reaplicar NoClip quando o personagem mudar
     Core.Services.Players.LocalPlayer.CharacterAdded:Connect(function()
         local noClipEnabled = Core:GetFlag("NoClip", false)
         self:ApplyNoClip(noClipEnabled)
@@ -1455,7 +1469,6 @@ function Visual:SetFog(enabled)
     end
 end
 
--- Função que aplica ou remove NoClip
 function Visual:ApplyNoClip(enabled)
     local char = player.Character
     if not char then return end
@@ -1679,7 +1692,7 @@ local mainWindow = Window:CreateWindow({
 
 -- PÁGINA GERAL
 local pageGeneral = mainWindow:CreatePage("Geral", "⌂")
-Widgets:Toggle(pageGeneral, { flag = "AutoFarm", label = "Auto Farm", desc = "Farm automático", default = false })
+Widgets:Toggle(pageGeneral, { flag = "AutoFarm", label = "Auto Farm", desc = "Farm automático (limite 30 studs)", default = false })
 Widgets:Toggle(pageGeneral, { flag = "LockOn", label = "Lock On", desc = "Câmera segue o alvo", default = false })
 Widgets:Toggle(pageGeneral, { flag = "AutoAttack", label = "Auto Attack", desc = "Ataca automaticamente", default = false })
 Widgets:Toggle(pageGeneral, { flag = "Speed", label = "Speed Boost", desc = "Aumenta velocidade", default = false })
@@ -2020,9 +2033,7 @@ Widgets:Toggle(pageESP, { flag = "FOVEnabled", label = "FOV Circle", desc = "Cí
 -- PÁGINA CONFIGS
 local pageConfigs = mainWindow:CreatePage("Configs", "⚙️")
 
-local profileList = {}
 local selectedProfile = nil
-local lastLoadedProfile = nil
 local searchQuery = ""
 
 local function createTextBox(parent, placeholder, text, callback)
@@ -2297,7 +2308,6 @@ function loadProfile(name)
     if data then
         ProfileManager:applyProfile(data)
         ProfileManager:saveLastProfile(name)
-        lastLoadedProfile = name
         Core:Notify("Perfil \"" .. name .. "\" carregado!")
         print("[ProfileManager] Perfil carregado:", name)
     else
