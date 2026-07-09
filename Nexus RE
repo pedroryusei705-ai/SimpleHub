@@ -1,0 +1,2509 @@
+-- ============================================================
+-- VERIFICA SE ESTÁ EM UM LOCALSCRIPT
+-- ============================================================
+if not game:GetService("RunService"):IsClient() then
+    error("Este script deve ser executado no cliente (LocalScript)!")
+end
+
+local player = game.Players.LocalPlayer
+if not player then
+    error("Jogador local não encontrado. Aguarde o carregamento.")
+end
+
+-- ============================================================
+-- CORE
+-- ============================================================
+local Core = {
+    Services = {},
+    Flags = {},
+    Registry = {},
+    Events = {},
+    Connections = {},
+    Modules = {},
+    Config = {},
+    Runtime = {},
+}
+
+Core.Services.Players = game:GetService("Players")
+Core.Services.RunService = game:GetService("RunService")
+Core.Services.UserInputService = game:GetService("UserInputService")
+Core.Services.CoreGui = game:GetService("CoreGui")
+Core.Services.TweenService = game:GetService("TweenService")
+Core.Services.HttpService = game:GetService("HttpService")
+Core.Services.Lighting = game:GetService("Lighting")
+Core.Services.StarterGui = game:GetService("StarterGui")
+
+function Core:SetFlag(name, value)
+    self.Flags[name] = value
+    self:FireEvent("FlagChanged", name, value)
+    if self.Registry[name] then
+        for _, widget in ipairs(self.Registry[name]) do
+            widget:Update(value)
+        end
+    end
+end
+
+function Core:GetFlag(name, default)
+    if self.Flags[name] == nil then return default end
+    return self.Flags[name]
+end
+
+function Core:RegisterWidget(name, widget)
+    if not self.Registry[name] then
+        self.Registry[name] = {}
+    end
+    table.insert(self.Registry[name], widget)
+    widget:Update(self:GetFlag(name, false))
+end
+
+function Core:Connect(event, callback)
+    if not self.Events[event] then
+        self.Events[event] = {}
+    end
+    table.insert(self.Events[event], callback)
+end
+
+function Core:FireEvent(event, ...)
+    if self.Events[event] then
+        for _, cb in ipairs(self.Events[event]) do
+            task.spawn(cb, ...)
+        end
+    end
+end
+
+function Core:RegisterModule(name, module)
+    self.Modules[name] = module
+    module.Core = self
+    if module.Init then
+        module:Init()
+    end
+end
+
+function Core:GetModule(name)
+    return self.Modules[name]
+end
+
+function Core:Destroy()
+    for _, conn in pairs(self.Connections) do
+        if conn.Connected then conn:Disconnect() end
+    end
+    table.clear(self.Connections)
+    table.clear(self.Events)
+    table.clear(self.Registry)
+    if self.Window then
+        self.Window:Destroy()
+    end
+end
+
+function Core:Notify(text, duration) end
+
+print("[Core] Inicializado com sucesso!")
+
+-- ============================================================
+-- THEME
+-- ============================================================
+local Theme = {
+    Colors = {
+        Background = Color3.fromRGB(10, 8, 15),
+        Surface = Color3.fromRGB(30, 20, 50),
+        SurfaceLight = Color3.fromRGB(60, 40, 90),
+        Primary = Color3.fromRGB(150, 80, 255),
+        PrimaryDark = Color3.fromRGB(100, 50, 200),
+        Text = Color3.fromRGB(255, 255, 255),
+        TextDim = Color3.fromRGB(200, 190, 220),
+        TextMuted = Color3.fromRGB(140, 130, 160),
+        Success = Color3.fromRGB(100, 220, 150),
+        Warning = Color3.fromRGB(255, 200, 80),
+        Danger = Color3.fromRGB(230, 80, 100),
+        Stroke = Color3.fromRGB(120, 80, 200),
+    },
+    Fonts = {
+        Default = Enum.Font.Gotham,
+        Bold = Enum.Font.GothamBold,
+        Mono = Enum.Font.SourceSans,
+    },
+    Sizes = {
+        Padding = 8,
+        CornerRadius = 10,
+        ToggleWidth = 38,
+        ToggleHeight = 20,
+        SliderHeight = 4,
+        ButtonHeight = 35,
+        SectionHeight = 30,
+    },
+    Animations = {
+        Duration = 0.2,
+        EasingStyle = Enum.EasingStyle.Quad,
+        EasingDirection = Enum.EasingDirection.Out,
+    },
+    Transparency = {
+        Background = 0.85,
+        Surface = 0.75,
+        SurfaceLight = 0.60,
+        Card = 0.70,
+    }
+}
+
+function Theme:ApplyCard(frame)
+    frame.BackgroundColor3 = self.Colors.Surface
+    frame.BackgroundTransparency = self.Transparency.Card
+    frame.BorderSizePixel = 0
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, self.Sizes.CornerRadius)
+    corner.Parent = frame
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = self.Colors.Stroke
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.3
+    stroke.Parent = frame
+    return frame
+end
+
+function Theme:ApplyButton(button, color)
+    button.BackgroundColor3 = color or self.Colors.Primary
+    button.BackgroundTransparency = 0.2
+    button.TextColor3 = self.Colors.Text
+    button.Font = self.Fonts.Bold
+    button.TextSize = 12
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = false
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, self.Sizes.CornerRadius)
+    corner.Parent = button
+    button.MouseEnter:Connect(function()
+        self:Tween(button, { BackgroundTransparency = 0.05 }, 0.15)
+    end)
+    button.MouseLeave:Connect(function()
+        self:Tween(button, { BackgroundTransparency = 0.2 }, 0.15)
+    end)
+    return button
+end
+
+function Theme:Tween(object, properties, duration)
+    local tweenInfo = TweenInfo.new(
+        duration or self.Animations.Duration,
+        self.Animations.EasingStyle,
+        self.Animations.EasingDirection
+    )
+    local tween = Core.Services.TweenService:Create(object, tweenInfo, properties)
+    tween:Play()
+    return tween
+end
+
+print("[Theme] Carregado!")
+
+-- ============================================================
+-- WIDGETS
+-- ============================================================
+local Widgets = {}
+
+function Widgets:Toggle(parent, config)
+    local flag = config.flag
+    local label = config.label
+    local desc = config.desc
+    local default = config.default or false
+
+    if Core:GetFlag(flag) == nil then
+        Core:SetFlag(flag, default)
+    end
+
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, desc and 55 or 40)
+    container.BackgroundColor3 = Theme.Colors.Surface
+    container.BackgroundTransparency = Theme.Transparency.Surface
+    container.BorderSizePixel = 0
+    container.Parent = parent
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = container
+
+    local labelObj = Instance.new("TextLabel")
+    labelObj.Size = UDim2.new(0.7, -10, 0, 20)
+    labelObj.Position = UDim2.new(0, 10, 0, desc and 8 or 10)
+    labelObj.BackgroundTransparency = 1
+    labelObj.Text = label
+    labelObj.Font = Theme.Fonts.Default
+    labelObj.TextSize = 12
+    labelObj.TextColor3 = Theme.Colors.Text
+    labelObj.TextXAlignment = Enum.TextXAlignment.Left
+    labelObj.Parent = container
+
+    if desc then
+        local descObj = Instance.new("TextLabel")
+        descObj.Size = UDim2.new(1, -20, 0, 18)
+        descObj.Position = UDim2.new(0, 10, 0, 28)
+        descObj.BackgroundTransparency = 1
+        descObj.Text = desc
+        descObj.Font = Theme.Fonts.Default
+        descObj.TextSize = 9
+        descObj.TextColor3 = Theme.Colors.TextMuted
+        descObj.TextWrapped = true
+        descObj.Parent = container
+    end
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(0, Theme.Sizes.ToggleWidth, 0, Theme.Sizes.ToggleHeight)
+    bg.Position = UDim2.new(1, -(Theme.Sizes.ToggleWidth + 7), 0, 10)
+    bg.BorderSizePixel = 0
+    bg.Parent = container
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(1, 0)
+    bgCorner.Parent = bg
+
+    local circle = Instance.new("Frame")
+    circle.Size = UDim2.new(0, 16, 0, 16)
+    circle.Position = UDim2.new(0, 2, 0.5, -8)
+    circle.BackgroundColor3 = Theme.Colors.Text
+    circle.BackgroundTransparency = 0
+    circle.BorderSizePixel = 0
+    circle.Parent = bg
+    local circleCorner = Instance.new("UICorner")
+    circleCorner.CornerRadius = UDim.new(1, 0)
+    circleCorner.Parent = circle
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = bg
+
+    local function setState(value)
+        Core:SetFlag(flag, value)
+        Theme:Tween(bg, {
+            BackgroundColor3 = value and Theme.Colors.Primary or Theme.Colors.SurfaceLight,
+            BackgroundTransparency = value and 0.1 or Theme.Transparency.SurfaceLight
+        })
+        Theme:Tween(circle, {
+            Position = value and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        })
+    end
+
+    local initial = Core:GetFlag(flag, default)
+    bg.BackgroundColor3 = initial and Theme.Colors.Primary or Theme.Colors.SurfaceLight
+    bg.BackgroundTransparency = initial and 0.1 or Theme.Transparency.SurfaceLight
+    circle.Position = initial and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+
+    btn.MouseButton1Click:Connect(function()
+        setState(not Core:GetFlag(flag))
+    end)
+
+    local widget = {}
+    function widget:Update(value)
+        Theme:Tween(bg, {
+            BackgroundColor3 = value and Theme.Colors.Primary or Theme.Colors.SurfaceLight,
+            BackgroundTransparency = value and 0.1 or Theme.Transparency.SurfaceLight
+        })
+        Theme:Tween(circle, {
+            Position = value and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        })
+    end
+
+    Core:RegisterWidget(flag, widget)
+    return container, widget
+end
+
+function Widgets:Slider(parent, config)
+    local flag = config.flag
+    local label = config.label
+    local desc = config.desc
+    local min = config.min or 0
+    local max = config.max or 100
+    local default = config.default or 50
+    local step = config.step or 1
+
+    if Core:GetFlag(flag) == nil then
+        Core:SetFlag(flag, default)
+    end
+
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, desc and 65 or 50)
+    container.BackgroundColor3 = Theme.Colors.Surface
+    container.BackgroundTransparency = Theme.Transparency.Surface
+    container.BorderSizePixel = 0
+    container.Parent = parent
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = container
+
+    local labelObj = Instance.new("TextLabel")
+    labelObj.Size = UDim2.new(0.6, -10, 0, 20)
+    labelObj.Position = UDim2.new(0, 10, 0, desc and 6 or 8)
+    labelObj.BackgroundTransparency = 1
+    labelObj.Text = label
+    labelObj.Font = Theme.Fonts.Default
+    labelObj.TextSize = 12
+    labelObj.TextColor3 = Theme.Colors.Text
+    labelObj.TextXAlignment = Enum.TextXAlignment.Left
+    labelObj.Parent = container
+
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0.3, -10, 0, 20)
+    valueLabel.Position = UDim2.new(0.7, 0, 0, desc and 6 or 8)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = tostring(default)
+    valueLabel.Font = Theme.Fonts.Mono
+    valueLabel.TextSize = 12
+    valueLabel.TextColor3 = Theme.Colors.TextDim
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = container
+
+    if desc then
+        local descObj = Instance.new("TextLabel")
+        descObj.Size = UDim2.new(1, -20, 0, 18)
+        descObj.Position = UDim2.new(0, 10, 0, 28)
+        descObj.BackgroundTransparency = 1
+        descObj.Text = desc
+        descObj.Font = Theme.Fonts.Default
+        descObj.TextSize = 9
+        descObj.TextColor3 = Theme.Colors.TextMuted
+        descObj.TextWrapped = true
+        descObj.Parent = container
+    end
+
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(0.9, 0, 0, Theme.Sizes.SliderHeight)
+    sliderBg.Position = UDim2.new(0.05, 0, 1, -(desc and 28 or 12))
+    sliderBg.BackgroundColor3 = Theme.Colors.SurfaceLight
+    sliderBg.BackgroundTransparency = Theme.Transparency.SurfaceLight
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = container
+    local cornerBg = Instance.new("UICorner")
+    cornerBg.CornerRadius = UDim.new(1, 0)
+    cornerBg.Parent = sliderBg
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = Theme.Colors.Primary
+    fill.BackgroundTransparency = 0.3
+    fill.BorderSizePixel = 0
+    fill.Parent = sliderBg
+    local cornerFill = Instance.new("UICorner")
+    cornerFill.CornerRadius = UDim.new(1, 0)
+    cornerFill.Parent = fill
+
+    local thumb = Instance.new("TextButton")
+    thumb.Size = UDim2.new(0, 14, 0, 14)
+    thumb.Position = UDim2.new(0, -7, 0.5, -7)
+    thumb.BackgroundColor3 = Theme.Colors.Primary
+    thumb.BackgroundTransparency = 0.2
+    thumb.BorderSizePixel = 0
+    thumb.Text = ""
+    thumb.Parent = sliderBg
+    local cornerThumb = Instance.new("UICorner")
+    cornerThumb.CornerRadius = UDim.new(1, 0)
+    cornerThumb.Parent = thumb
+    local strokeThumb = Instance.new("UIStroke")
+    strokeThumb.Color = Theme.Colors.Stroke
+    strokeThumb.Thickness = 1
+    strokeThumb.Transparency = 0.3
+    strokeThumb.Parent = thumb
+
+    local function updateVisual(value)
+        if type(value) ~= "number" then
+            value = default
+        end
+        local clamped = math.clamp(value, min, max)
+        if step then
+            clamped = math.floor(clamped / step + 0.5) * step
+        end
+        local percent = (clamped - min) / (max - min)
+        fill.Size = UDim2.new(percent, 0, 1, 0)
+        thumb.Position = UDim2.new(percent, -7, 0.5, -7)
+        valueLabel.Text = tostring(clamped)
+        return clamped
+    end
+
+    local function setValue(value)
+        local clamped = updateVisual(value)
+        Core:SetFlag(flag, clamped)
+    end
+
+    local dragging = false
+
+    local function handleSliderInput(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            local pos = input.Position.X - sliderBg.AbsolutePosition.X
+            local size = sliderBg.AbsoluteSize.X
+            local percent = math.clamp(pos / size, 0, 1)
+            local value = min + (max - min) * percent
+            setValue(value)
+        end
+    end
+
+    sliderBg.InputBegan:Connect(handleSliderInput)
+    thumb.InputBegan:Connect(handleSliderInput)
+
+    Core.Services.UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local pos = input.Position.X - sliderBg.AbsolutePosition.X
+            local size = sliderBg.AbsoluteSize.X
+            local percent = math.clamp(pos / size, 0, 1)
+            local value = min + (max - min) * percent
+            setValue(value)
+        end
+    end)
+
+    Core.Services.UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    local initial = Core:GetFlag(flag, default)
+    updateVisual(initial)
+
+    local widget = {}
+    function widget:Update(value)
+        updateVisual(value)
+    end
+
+    Core:RegisterWidget(flag, widget)
+    return container, widget
+end
+
+print("[Widgets] Carregado!")
+
+-- ============================================================
+-- WINDOW
+-- ============================================================
+local Window = {}
+
+function Window:CreateWindow(config)
+    local title = config.title or "RyuHub"
+    local size = config.size or Vector2.new(600, 700)
+    local icon = config.icon or "✦"
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "RyuHub"
+    gui.ResetOnSpawn = false
+    gui.Parent = player.PlayerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, size.X, 0, size.Y)
+    frame.Position = UDim2.new(0, 20, 0.5, -size.Y/2)
+    frame.BackgroundColor3 = Theme.Colors.Background
+    frame.BackgroundTransparency = Theme.Transparency.Background
+    frame.BorderSizePixel = 0
+    frame.Parent = gui
+
+    Theme:ApplyCard(frame)
+
+    local topbar = Instance.new("Frame")
+    topbar.Size = UDim2.new(1, 0, 0, 35)
+    topbar.BackgroundColor3 = Theme.Colors.Surface
+    topbar.BackgroundTransparency = Theme.Transparency.Surface
+    topbar.BorderSizePixel = 0
+    topbar.Parent = frame
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(0.8, 0, 1, 0)
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = icon .. " " .. title
+    titleLabel.Font = Theme.Fonts.Bold
+    titleLabel.TextSize = 14
+    titleLabel.TextColor3 = Theme.Colors.Text
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = topbar
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 2.5)
+    closeBtn.BackgroundColor3 = Theme.Colors.Danger
+    closeBtn.BackgroundTransparency = 0.3
+    closeBtn.Text = "✕"
+    closeBtn.Font = Theme.Fonts.Bold
+    closeBtn.TextSize = 14
+    closeBtn.TextColor3 = Theme.Colors.Text
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = topbar
+    local cornerClose = Instance.new("UICorner")
+    cornerClose.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    cornerClose.Parent = closeBtn
+    closeBtn.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+
+    -- Arraste manual
+    local draggingWin = false
+    local dragOffset = Vector2.new()
+
+    topbar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            draggingWin = true
+            dragOffset = Vector2.new(
+                input.Position.X - frame.AbsolutePosition.X,
+                input.Position.Y - frame.AbsolutePosition.Y
+            )
+        end
+    end)
+
+    Core.Services.UserInputService.InputChanged:Connect(function(input)
+        if draggingWin and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local newPos = UDim2.new(0, input.Position.X - dragOffset.X, 0, input.Position.Y - dragOffset.Y)
+            frame.Position = newPos
+        end
+    end)
+
+    Core.Services.UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            draggingWin = false
+        end
+    end)
+
+    local sidebar = Instance.new("Frame")
+    sidebar.Size = UDim2.new(0, 45, 1, -40)
+    sidebar.Position = UDim2.new(0, 5, 0, 38)
+    sidebar.BackgroundColor3 = Theme.Colors.Surface
+    sidebar.BackgroundTransparency = Theme.Transparency.Surface
+    sidebar.BorderSizePixel = 0
+    sidebar.Parent = frame
+
+    local sidebarLayout = Instance.new("UIListLayout")
+    sidebarLayout.Padding = UDim.new(0, 6)
+    sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    sidebarLayout.Parent = sidebar
+
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, -60, 1, -40)
+    content.Position = UDim2.new(0, 55, 0, 38)
+    content.BackgroundTransparency = 1
+    content.Parent = frame
+
+    local pages = {}
+    local pageButtons = {}
+
+    function Window:CreatePage(name, pageIcon)
+        local page = Instance.new("ScrollingFrame")
+        page.Size = UDim2.new(1, -5, 1, 0)
+        page.BackgroundTransparency = 1
+        page.ScrollBarThickness = 3
+        page.ScrollBarImageColor3 = Theme.Colors.Stroke
+        page.ScrollBarImageTransparency = 0.5
+        page.CanvasSize = UDim2.new(0, 0, 0, 0)
+        page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        page.Visible = false
+        page.Parent = content
+
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0, 8)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Parent = page
+
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 35, 0, 35)
+        btn.BackgroundColor3 = Theme.Colors.SurfaceLight
+        btn.BackgroundTransparency = Theme.Transparency.SurfaceLight
+        btn.Text = pageIcon or "●"
+        btn.Font = Theme.Fonts.Bold
+        btn.TextSize = 18
+        btn.TextColor3 = Theme.Colors.TextMuted
+        btn.BorderSizePixel = 0
+        btn.Parent = sidebar
+        local cornerBtn = Instance.new("UICorner")
+        cornerBtn.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        cornerBtn.Parent = btn
+
+        local tooltip = Instance.new("TextLabel")
+        tooltip.Size = UDim2.new(0, 80, 0, 20)
+        tooltip.Position = UDim2.new(1, 5, 0.5, -10)
+        tooltip.BackgroundColor3 = Theme.Colors.Surface
+        tooltip.BackgroundTransparency = Theme.Transparency.Surface
+        tooltip.Text = name
+        tooltip.Font = Theme.Fonts.Default
+        tooltip.TextSize = 10
+        tooltip.TextColor3 = Theme.Colors.Text
+        tooltip.Visible = false
+        tooltip.Parent = btn
+        local cornerTip = Instance.new("UICorner")
+        cornerTip.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        cornerTip.Parent = tooltip
+
+        btn.MouseEnter:Connect(function()
+            tooltip.Visible = true
+        end)
+        btn.MouseLeave:Connect(function()
+            tooltip.Visible = false
+        end)
+
+        table.insert(pages, page)
+        table.insert(pageButtons, btn)
+
+        btn.MouseButton1Click:Connect(function()
+            Window:SwitchPage(page)
+        end)
+
+        return page
+    end
+
+    function Window:SwitchPage(targetPage)
+        for _, p in ipairs(pages) do
+            p.Visible = false
+        end
+        for _, b in ipairs(pageButtons) do
+            b.BackgroundColor3 = Theme.Colors.SurfaceLight
+            b.BackgroundTransparency = Theme.Transparency.SurfaceLight
+            b.TextColor3 = Theme.Colors.TextMuted
+        end
+        targetPage.Visible = true
+        for i, p in ipairs(pages) do
+            if p == targetPage then
+                pageButtons[i].BackgroundColor3 = Theme.Colors.Primary
+                pageButtons[i].BackgroundTransparency = 0.2
+                pageButtons[i].TextColor3 = Theme.Colors.Text
+            end
+        end
+    end
+
+    return {
+        Frame = frame,
+        Gui = gui,
+        CreatePage = Window.CreatePage,
+        SwitchPage = Window.SwitchPage,
+        Destroy = function()
+            gui:Destroy()
+        end
+    }
+end
+
+print("[Window] Carregado!")
+
+-- ============================================================
+-- TARGET MANAGER
+-- ============================================================
+local TargetManager = {}
+
+local npcList = {}
+local lastScan = 0
+local SCAN_INTERVAL = 0.15
+local MAX_DISTANCE = 1000
+local currentTarget = nil
+local rootCache = nil
+
+local function getPlayerRoot()
+    local char = player.Character
+    if not char then return nil end
+    if not rootCache or rootCache.Parent ~= char then
+        rootCache = char:FindFirstChild("HumanoidRootPart")
+    end
+    return rootCache
+end
+
+function TargetManager:update()
+    local root = getPlayerRoot()
+    if not root then
+        table.clear(npcList)
+        currentTarget = nil
+        return
+    end
+
+    table.clear(npcList)
+    local alive = workspace:FindFirstChild("Alive")
+    local models
+    if alive then
+        models = alive:GetChildren()
+    else
+        models = workspace:GetDescendants()
+    end
+
+    for _, model in ipairs(models) do
+        if model:IsA("Model") and model ~= player.Character then
+            local hum = model:FindFirstChild("Humanoid")
+            local modelRoot = model:FindFirstChild("HumanoidRootPart")
+            if hum and modelRoot and hum.Health > 0 then
+                local dist = (root.Position - modelRoot.Position).Magnitude
+                if dist <= MAX_DISTANCE then
+                    table.insert(npcList, { model = model, root = modelRoot, humanoid = hum, distance = dist })
+                end
+            end
+        end
+    end
+
+    table.sort(npcList, function(a, b) return a.distance < b.distance end)
+    currentTarget = #npcList > 0 and npcList[1].model or nil
+end
+
+function TargetManager:getTarget()
+    local now = tick()
+    if now - lastScan > SCAN_INTERVAL then
+        self:update()
+        lastScan = now
+    end
+    return currentTarget
+end
+
+function TargetManager:getClosestInfo()
+    self:getTarget()
+    return #npcList > 0 and npcList[1] or nil
+end
+
+print("[TargetManager] Carregado!")
+
+-- ============================================================
+-- COMBAT
+-- ============================================================
+local Combat = {}
+
+local autoAttackThread = nil
+local autoAttackRunning = false
+local attackCooldown = 0.12
+
+local remoteCache = nil
+local weaponCache = nil
+local playerRootCache = nil
+
+function Combat:getRemote()
+    if not remoteCache then
+        remoteCache = game.ReplicatedStorage:FindFirstChild("Events") and game.ReplicatedStorage.Events:FindFirstChild("CombatEvent")
+    end
+    return remoteCache
+end
+
+function Combat:getWeapon()
+    if weaponCache and weaponCache.Parent then
+        return weaponCache
+    end
+    local char = player.Character
+    if not char then return nil end
+    local fistCombat = char:FindFirstChild("FistCombat")
+    if not fistCombat then return nil end
+    local folder = fistCombat:FindFirstChild("WeaponInfoFolder")
+    if not folder then return nil end
+    weaponCache = folder:FindFirstChild("Fist")
+    return weaponCache
+end
+
+function Combat:getPlayerRoot()
+    local char = player.Character
+    if not char then return nil end
+    if not playerRootCache or playerRootCache.Parent ~= char then
+        playerRootCache = char:FindFirstChild("HumanoidRootPart")
+    end
+    return playerRootCache
+end
+
+function Combat:Init()
+    Core.Connections.AutoFarm = Core.Services.RunService.Heartbeat:Connect(function()
+        if Core:GetFlag("AutoFarm") then
+            self:AutoFarmLoop()
+        end
+    end)
+
+    Core.Connections.LockOn = Core.Services.RunService.RenderStepped:Connect(function()
+        if Core:GetFlag("LockOn") then
+            self:LockOnLoop()
+        end
+    end)
+
+    Core.Connections.Speed = Core.Services.RunService.Heartbeat:Connect(function()
+        if Core:GetFlag("Speed") then
+            self:SpeedLoop()
+        end
+    end)
+
+    Core:Connect("FlagChanged", function(flag, value)
+        if flag == "AutoAttack" then
+            if value then
+                self:StartAutoAttack()
+            else
+                self:StopAutoAttack()
+            end
+        end
+        if flag == "AttackCooldown" then
+            attackCooldown = value
+        end
+    end)
+
+    if Core:GetFlag("AutoAttack") then
+        self:StartAutoAttack()
+    end
+    attackCooldown = Core:GetFlag("AttackCooldown", 0.12)
+end
+
+function Combat:StartAutoAttack()
+    if autoAttackThread then return end
+    autoAttackRunning = true
+    autoAttackThread = task.spawn(function()
+        local remote = self:getRemote()
+        if not remote then return end
+        local weapon = self:getWeapon()
+        if not weapon then return end
+        local root = self:getPlayerRoot()
+        if not root then return end
+
+        while autoAttackRunning do
+            task.wait(attackCooldown)
+
+            local info = TargetManager:getClosestInfo()
+            local burst = Core:GetFlag("BurstCount", 3)
+            if burst < 1 then burst = 1 end
+
+            if info then
+                local npcRoot = info.root
+                if npcRoot then
+                    local attackPos = npcRoot.Position
+                    local mode = Core:GetFlag("AutofarmMode", "Behind")
+                    local distance = Core:GetFlag("AutofarmDistance", 3)
+                    if mode == "Behind" then
+                        local backVec = -npcRoot.CFrame.LookVector * distance
+                        attackPos = npcRoot.Position + backVec + Vector3.new(0, 2.5, 0)
+                    elseif mode == "Above" then
+                        attackPos = npcRoot.Position + Vector3.new(0, distance, 0)
+                    end
+                    local cframe = CFrame.new(attackPos, npcRoot.Position)
+                    for _ = 1, burst do
+                        remote:FireServer(1, weapon, cframe, true, weapon)
+                        remote:FireServer(2, weapon, cframe, true, weapon)
+                        remote:FireServer(3, weapon, cframe, true, weapon)
+                        remote:FireServer(4, weapon, cframe, true, weapon)
+                    end
+                end
+            else
+                if root then
+                    local cframe = root.CFrame * CFrame.new(0, 0, -3)
+                    for _ = 1, burst do
+                        remote:FireServer(1, weapon, cframe, true, weapon)
+                        remote:FireServer(2, weapon, cframe, true, weapon)
+                        remote:FireServer(3, weapon, cframe, true, weapon)
+                        remote:FireServer(4, weapon, cframe, true, weapon)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+function Combat:StopAutoAttack()
+    autoAttackRunning = false
+    if autoAttackThread then
+        task.cancel(autoAttackThread)
+        autoAttackThread = nil
+    end
+end
+
+function Combat:LockOnLoop()
+    local target = TargetManager:getTarget()
+    if not target then return end
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    local npcRoot = target:FindFirstChild("HumanoidRootPart")
+    if not npcRoot then return end
+    local currentPos = camera.CFrame.Position
+    local targetPos = npcRoot.Position
+    local lookAt = CFrame.new(currentPos, targetPos)
+    camera.CFrame = camera.CFrame:Lerp(lookAt, 0.35)
+end
+
+function Combat:AutoFarmLoop()
+    local root = self:getPlayerRoot()
+    if not root then return end
+    local target = TargetManager:getTarget()
+    if not target then return end
+    local npcRoot = target:FindFirstChild("HumanoidRootPart")
+    if not npcRoot then return end
+
+    root.AssemblyLinearVelocity = Vector3.zero
+    root.AssemblyAngularVelocity = Vector3.zero
+
+    local mode = Core:GetFlag("AutofarmMode", "Behind")
+    local distance = Core:GetFlag("AutofarmDistance", 3)
+
+    if mode == "Above" then
+        local targetPos = npcRoot.Position + Vector3.new(0, distance, 0)
+        root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+    else
+        local backVec = -npcRoot.CFrame.LookVector * distance
+        local upVec = Vector3.new(0, 2.5, 0)
+        local targetPos = npcRoot.Position + backVec + upVec
+        root.CFrame = CFrame.new(targetPos, npcRoot.Position)
+    end
+end
+
+local speedVector = Vector3.new(0,0,0)
+function Combat:SpeedLoop()
+    local root = self:getPlayerRoot()
+    if not root then return end
+    local char = player.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return end
+    local moveDir = hum.MoveDirection
+    if moveDir.Magnitude > 0 then
+        local speed = Core:GetFlag("SpeedValue", 160)
+        local curY = root.AssemblyLinearVelocity.Y
+        speedVector = Vector3.new(moveDir.X * speed, curY, moveDir.Z * speed)
+        root.AssemblyLinearVelocity = speedVector
+    end
+end
+
+Core:RegisterModule("Combat", Combat)
+
+-- ============================================================
+-- TELEPORT
+-- ============================================================
+local Teleport = {}
+
+Teleport.Config = {
+    MAX_TELEPORT_DISTANCE = 200,
+    TELEPORT_SPEED = 120,
+    TELEPORT_NPC_FOLDER = nil,
+}
+
+Teleport.State = {
+    isTeleporting = false,
+}
+
+function Teleport:getCharComponents()
+    local char = player.Character
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChild("Humanoid")
+    if not root or not hum then return nil end
+    return root, hum
+end
+
+function Teleport:ultraSmoothTeleport(targetPosition)
+    if self.State.isTeleporting then return false end
+    local root = self:getCharComponents()
+    if not root then return false end
+    self.State.isTeleporting = true
+    local startPos = root.Position
+    local distance = (targetPosition - startPos).Magnitude
+    if distance < 10 then
+        root.CFrame = CFrame.new(targetPosition)
+        self.State.isTeleporting = false
+        return true
+    end
+    if distance > self.Config.MAX_TELEPORT_DISTANCE then
+        local direction = (targetPosition - startPos).Unit
+        local numChunks = math.ceil(distance / self.Config.MAX_TELEPORT_DISTANCE)
+        for i = 1, numChunks do
+            if not self.State.isTeleporting then break end
+            local chunkTarget = (i == numChunks) and targetPosition or (startPos + direction * self.Config.MAX_TELEPORT_DISTANCE * i)
+            local chunkTime = (chunkTarget - root.Position).Magnitude / self.Config.TELEPORT_SPEED
+            local tween = Core.Services.TweenService:Create(root, TweenInfo.new(chunkTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { CFrame = CFrame.new(chunkTarget) })
+            tween:Play()
+            tween.Completed:Wait()
+            task.wait(0.1)
+        end
+    else
+        local travelTime = distance / self.Config.TELEPORT_SPEED
+        local tween = Core.Services.TweenService:Create(root, TweenInfo.new(travelTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { CFrame = CFrame.new(targetPosition) })
+        tween:Play()
+        tween.Completed:Wait()
+    end
+    self.State.isTeleporting = false
+    return true
+end
+
+function Teleport:safeTeleportToNPC(npcName)
+    if not self.Config.TELEPORT_NPC_FOLDER then
+        return false, "No NPC folder"
+    end
+    local root = self:getCharComponents()
+    if not root then return false, "Character not found" end
+    for _, npc in ipairs(self.Config.TELEPORT_NPC_FOLDER:GetChildren()) do
+        if npc.Name == npcName and npc:IsA("Model") then
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if npcRoot then
+                task.spawn(function()
+                    self:ultraSmoothTeleport(npcRoot.Position + Vector3.new(0, 2, 5))
+                end)
+                return true, "Teleporting..."
+            end
+        end
+    end
+    return false, "NPC not found"
+end
+
+function Teleport:getNPCList()
+    local list = {}
+    if not self.Config.TELEPORT_NPC_FOLDER then
+        return list
+    end
+    for _, npc in ipairs(self.Config.TELEPORT_NPC_FOLDER:GetChildren()) do
+        if npc:IsA("Model") and npc:FindFirstChild("HumanoidRootPart") then
+            local name = npc.Name
+            if not table.find(list, name) then
+                table.insert(list, name)
+            end
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+local liveNPCs = workspace:FindFirstChild("LiveNPCS")
+if liveNPCs then
+    Teleport.Config.TELEPORT_NPC_FOLDER = liveNPCs
+else
+    local candidates = { "NPCs", "Alive", "Enemies" }
+    for _, name in ipairs(candidates) do
+        local folder = workspace:FindFirstChild(name)
+        if folder then
+            Teleport.Config.TELEPORT_NPC_FOLDER = folder
+            break
+        end
+    end
+end
+print("[Teleport] Carregado!")
+
+-- ============================================================
+-- ESP
+-- ============================================================
+local ESP = {}
+
+ESP.espObjects = {}
+ESP.tracerLines = {}
+ESP.healthBarObjects = {}
+ESP.playerESPObjects = {}
+ESP.fovDrawingCircle = nil
+
+function ESP:Init()
+    Core.Connections.ESPUpdate = Core.Services.RunService.RenderStepped:Connect(function()
+        self:UpdateVisuals()
+        self:UpdateTracersAndFOV()
+        self:UpdatePlayerESP()
+    end)
+
+    Core:Connect("FlagChanged", function(flag, value)
+        if flag == "ESPEnabled" and not value then
+            self:ClearAllESP()
+        end
+        if flag == "TracersEnabled" and not value then
+            self:ClearAllTracers()
+        end
+        if flag == "HealthBarsEnabled" and not value then
+            self:ClearAllHealthBars()
+        end
+        if flag == "FOVEnabled" and not value then
+            self:RemoveFOVCircle()
+        end
+    end)
+end
+
+function ESP:GetNPCTargets()
+    local targets = {}
+    local alive = workspace:FindFirstChild("Alive")
+    if not alive then
+        for _, model in ipairs(workspace:GetDescendants()) do
+            if model:IsA("Model") and model ~= player.Character then
+                local hum = model:FindFirstChild("Humanoid")
+                if hum and hum.Health > 0 and model:FindFirstChild("HumanoidRootPart") then
+                    table.insert(targets, model)
+                end
+            end
+        end
+        return targets
+    end
+    for _, model in ipairs(alive:GetChildren()) do
+        if model:IsA("Model") and model ~= player.Character then
+            local hum = model:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 and model:FindFirstChild("HumanoidRootPart") then
+                table.insert(targets, model)
+            end
+        end
+    end
+    return targets
+end
+
+function ESP:CreateESP(npc)
+    if self.espObjects[npc] then return end
+    if not npc:FindFirstChild("HumanoidRootPart") then return end
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "CyberHighlight"
+    highlight.Adornee = npc
+    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Parent = npc
+    self.espObjects[npc] = highlight
+end
+
+function ESP:RemoveESP(npc)
+    if self.espObjects[npc] then
+        self.espObjects[npc]:Destroy()
+        self.espObjects[npc] = nil
+    end
+end
+
+function ESP:ClearAllESP()
+    for _, esp in pairs(self.espObjects) do
+        if esp then esp:Destroy() end
+    end
+    table.clear(self.espObjects)
+end
+
+function ESP:CreateTracer(npc)
+    if self.tracerLines[npc] then return end
+    if not npc:FindFirstChild("HumanoidRootPart") then return end
+    local line = Drawing.new("Line")
+    line.Visible = true
+    line.Color = Color3.new(0, 1, 0)
+    line.Thickness = 2
+    line.Transparency = 0.7
+    self.tracerLines[npc] = line
+end
+
+function ESP:UpdateTracers()
+    if not Core:GetFlag("TracersEnabled", false) then return end
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    local screenSize = cam.ViewportSize
+    local centerX = screenSize.X / 2
+    local centerY = screenSize.Y
+    for npc, line in pairs(self.tracerLines) do
+        if npc and npc.Parent then
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if npcRoot then
+                local npcPos, onScreen = cam:WorldToViewportPoint(npcRoot.Position)
+                if onScreen then
+                    line.From = Vector2.new(centerX, centerY)
+                    line.To = Vector2.new(npcPos.X, npcPos.Y)
+                    line.Visible = true
+                else
+                    line.Visible = false
+                end
+            else
+                line.Visible = false
+            end
+        else
+            line.Visible = false
+        end
+    end
+end
+
+function ESP:RemoveTracer(npc)
+    if self.tracerLines[npc] then
+        self.tracerLines[npc]:Remove()
+        self.tracerLines[npc] = nil
+    end
+end
+
+function ESP:ClearAllTracers()
+    for _, line in pairs(self.tracerLines) do
+        if line then line:Remove() end
+    end
+    table.clear(self.tracerLines)
+end
+
+function ESP:CreateHealthBar(npc)
+    if self.healthBarObjects[npc] then return end
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+    local npcHum = npc:FindFirstChild("Humanoid")
+    if not npcRoot or not npcHum then return end
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "CyberHealthBar"
+    billboard.Adornee = npcRoot
+    billboard.Size = UDim2.new(4, 0, 0.5, 0)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = npc
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    bg.BorderSizePixel = 0
+    bg.Parent = billboard
+    local bar = Instance.new("Frame")
+    bar.Name = "HealthBar"
+    bar.Size = UDim2.new(npcHum.Health / npcHum.MaxHealth, 0, 1, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    bar.BorderSizePixel = 0
+    bar.Parent = bg
+    local txt = Instance.new("TextLabel")
+    txt.Name = "HealthText"
+    txt.Size = UDim2.new(1, 0, 1, 0)
+    txt.BackgroundTransparency = 1
+    txt.Text = math.floor(npcHum.Health) .. "/" .. math.floor(npcHum.MaxHealth)
+    txt.TextColor3 = Color3.fromRGB(255, 255, 255)
+    txt.TextScaled = true
+    txt.Font = Enum.Font.GothamBold
+    txt.Parent = bg
+    local c1 = Instance.new("UICorner")
+    c1.CornerRadius = UDim.new(0, 4)
+    c1.Parent = bg
+    local c2 = Instance.new("UICorner")
+    c2.CornerRadius = UDim.new(0, 4)
+    c2.Parent = bar
+    self.healthBarObjects[npc] = billboard
+end
+
+function ESP:UpdateHealthBar(npc)
+    local gui = self.healthBarObjects[npc]
+    if not gui then return end
+    local npcHum = npc:FindFirstChild("Humanoid")
+    if not npcHum then return end
+    local frame = gui:FindFirstChild("Frame")
+    local bar = frame and frame:FindFirstChild("HealthBar")
+    local txt = frame and frame:FindFirstChild("HealthText")
+    if not bar or not txt then return end
+    local pct = npcHum.Health / npcHum.MaxHealth
+    bar.Size = UDim2.new(pct, 0, 1, 0)
+    txt.Text = math.floor(npcHum.Health) .. "/" .. math.floor(npcHum.MaxHealth)
+    if pct > 0.5 then
+        bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    elseif pct > 0.25 then
+        bar.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+    else
+        bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    end
+end
+
+function ESP:RemoveHealthBar(npc)
+    if self.healthBarObjects[npc] then
+        self.healthBarObjects[npc]:Destroy()
+        self.healthBarObjects[npc] = nil
+    end
+end
+
+function ESP:ClearAllHealthBars()
+    for _, gui in pairs(self.healthBarObjects) do
+        if gui then gui:Destroy() end
+    end
+    table.clear(self.healthBarObjects)
+end
+
+function ESP:UpdatePlayerESP()
+    if not Core:GetFlag("PlayerESPEnabled", false) then
+        for _, esp in pairs(self.playerESPObjects) do
+            if esp then esp:Destroy() end
+        end
+        table.clear(self.playerESPObjects)
+        return
+    end
+    for _, otherPlayer in ipairs(Core.Services.Players:GetPlayers()) do
+        if otherPlayer ~= player and otherPlayer.Character then
+            local char = otherPlayer.Character
+            if char and not self.playerESPObjects[otherPlayer] then
+                local hl = Instance.new("Highlight")
+                hl.Name = "PlayerHighlight"
+                hl.Adornee = char
+                hl.FillColor = Color3.fromRGB(0, 255, 255)
+                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                hl.FillTransparency = 0.7
+                hl.OutlineTransparency = 0
+                hl.Parent = char
+                self.playerESPObjects[otherPlayer] = hl
+            end
+        end
+    end
+end
+
+function ESP:CreateFOVCircle()
+    if self.fovDrawingCircle then return end
+    local c = Drawing.new("Circle")
+    c.Visible = true
+    c.Thickness = 2
+    c.Color = Color3.new(1, 1, 1)
+    c.Transparency = 0.7
+    c.NumSides = 60
+    c.Radius = 150
+    c.Filled = false
+    self.fovDrawingCircle = c
+end
+
+function ESP:UpdateFOVCircle()
+    if not Core:GetFlag("FOVEnabled", false) or not self.fovDrawingCircle then return end
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    local sz = cam.ViewportSize
+    self.fovDrawingCircle.Position = Vector2.new(sz.X / 2, sz.Y / 2)
+    self.fovDrawingCircle.Visible = true
+end
+
+function ESP:RemoveFOVCircle()
+    if self.fovDrawingCircle then
+        self.fovDrawingCircle:Remove()
+        self.fovDrawingCircle = nil
+    end
+end
+
+function ESP:UpdateVisuals()
+    if not (Core:GetFlag("ESPEnabled", false) or Core:GetFlag("TracersEnabled", false) or Core:GetFlag("HealthBarsEnabled", false)) then
+        return
+    end
+    local targets = self:GetNPCTargets()
+    for _, npc in ipairs(targets) do
+        if Core:GetFlag("ESPEnabled", false) then
+            self:CreateESP(npc)
+        else
+            self:RemoveESP(npc)
+        end
+        if Core:GetFlag("TracersEnabled", false) then
+            self:CreateTracer(npc)
+        else
+            self:RemoveTracer(npc)
+        end
+        if Core:GetFlag("HealthBarsEnabled", false) then
+            self:CreateHealthBar(npc)
+            self:UpdateHealthBar(npc)
+        else
+            self:RemoveHealthBar(npc)
+        end
+    end
+    local existingNPCs = {}
+    for _, npc in ipairs(targets) do
+        existingNPCs[npc] = true
+    end
+    for npc, _ in pairs(self.espObjects) do
+        if not existingNPCs[npc] then
+            self:RemoveESP(npc)
+        end
+    end
+    for npc, _ in pairs(self.tracerLines) do
+        if not existingNPCs[npc] then
+            self:RemoveTracer(npc)
+        end
+    end
+    for npc, _ in pairs(self.healthBarObjects) do
+        if not existingNPCs[npc] then
+            self:RemoveHealthBar(npc)
+        end
+    end
+end
+
+function ESP:UpdateTracersAndFOV()
+    if Core:GetFlag("TracersEnabled", false) then
+        self:UpdateTracers()
+    end
+    if Core:GetFlag("FOVEnabled", false) then
+        if not self.fovDrawingCircle then
+            self:CreateFOVCircle()
+        end
+        self:UpdateFOVCircle()
+    else
+        self:RemoveFOVCircle()
+    end
+end
+
+Core:RegisterModule("ESP", ESP)
+print("[ESP] Carregado!")
+
+-- ============================================================
+-- VISUAL
+-- ============================================================
+local Visual = {}
+
+local originalFogStart = nil
+local originalFogEnd = nil
+local originalBrightness = nil
+local originalAmbient = nil
+local originalOutdoorAmbient = nil
+
+function Visual:Init()
+    local Lighting = Core.Services.Lighting
+    originalFogStart = Lighting.FogStart
+    originalFogEnd = Lighting.FogEnd
+    originalBrightness = Lighting.Brightness
+    originalAmbient = Lighting.Ambient
+    originalOutdoorAmbient = Lighting.OutdoorAmbient
+
+    Core:Connect("FlagChanged", function(flag, value)
+        if flag == "FullBright" then
+            self:SetFullBright(value)
+        elseif flag == "RemoveFog" then
+            self:SetFog(value)
+        end
+    end)
+
+    self:SetFullBright(Core:GetFlag("FullBright", false))
+    self:SetFog(Core:GetFlag("RemoveFog", false))
+
+    Core.Connections.NoClip = Core.Services.RunService.Heartbeat:Connect(function()
+        if Core:GetFlag("NoClip", false) then
+            self:ApplyNoClip(true)
+        end
+    end)
+end
+
+function Visual:SetFullBright(enabled)
+    local Lighting = Core.Services.Lighting
+    if enabled then
+        Lighting.Brightness = 10
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+    else
+        Lighting.Brightness = originalBrightness or 2
+        Lighting.Ambient = originalAmbient or Color3.fromRGB(127, 127, 127)
+        Lighting.OutdoorAmbient = originalOutdoorAmbient or Color3.fromRGB(127, 127, 127)
+    end
+end
+
+function Visual:SetFog(enabled)
+    local Lighting = Core.Services.Lighting
+    if enabled then
+        Lighting.FogStart = 0
+        Lighting.FogEnd = 1000000
+    else
+        Lighting.FogStart = originalFogStart or 0
+        Lighting.FogEnd = originalFogEnd or 1000
+    end
+end
+
+function Visual:ApplyNoClip(enabled)
+    local char = player.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = not enabled
+        end
+    end
+end
+
+Core:RegisterModule("Visual", Visual)
+print("[Visual] Carregado!")
+
+-- ============================================================
+-- PROFILE MANAGER (Configs)
+-- ============================================================
+local ProfileManager = {}
+
+local PROFILES_FOLDER = "NexusHub/Profiles/"
+local LAST_PROFILE_FILE = "NexusHub/lastprofile.txt"
+
+-- Verifica se as funções de sistema de arquivos estão disponíveis
+local function hasFileSystem()
+    return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+end
+
+if not hasFileSystem() then
+    warn("[ProfileManager] Sistema de arquivos não disponível. As funções de perfil não funcionarão.")
+end
+
+-- Cria a pasta de perfis se não existir
+function ProfileManager:ensureFolder()
+    if not hasFileSystem() then return false end
+    if not isfolder(PROFILES_FOLDER) then
+        makefolder(PROFILES_FOLDER)
+    end
+    return true
+end
+
+-- Lista todos os perfis (nomes dos arquivos .json)
+function ProfileManager:listProfiles()
+    if not hasFileSystem() then return {} end
+    self:ensureFolder()
+    local files = listfiles(PROFILES_FOLDER)
+    local profiles = {}
+    for _, file in ipairs(files) do
+        -- extrai o nome do arquivo (sem caminho e extensão)
+        local name = file:match("([^/\\]+)%.json$")
+        if name then
+            table.insert(profiles, name)
+        end
+    end
+    table.sort(profiles)
+    return profiles
+end
+
+-- Salva o perfil atual com um nome
+function ProfileManager:saveProfile(name, data)
+    if not hasFileSystem() then return false end
+    self:ensureFolder()
+    local path = PROFILES_FOLDER .. name .. ".json"
+    local content = game:GetService("HttpService"):JSONEncode(data)
+    writefile(path, content)
+    return true
+end
+
+-- Carrega um perfil pelo nome
+function ProfileManager:loadProfile(name)
+    if not hasFileSystem() then return nil end
+    local path = PROFILES_FOLDER .. name .. ".json"
+    if not isfile(path) then return nil end
+    local content = readfile(path)
+    local data = game:GetService("HttpService"):JSONDecode(content)
+    return data
+end
+
+-- Deleta um perfil
+function ProfileManager:deleteProfile(name)
+    if not hasFileSystem() then return false end
+    local path = PROFILES_FOLDER .. name .. ".json"
+    if isfile(path) then
+        delfile(path)
+        return true
+    end
+    return false
+end
+
+-- Renomeia um perfil
+function ProfileManager:renameProfile(oldName, newName)
+    if not hasFileSystem() then return false end
+    local oldPath = PROFILES_FOLDER .. oldName .. ".json"
+    local newPath = PROFILES_FOLDER .. newName .. ".json"
+    if not isfile(oldPath) then return false end
+    if isfile(newPath) then return false end -- evitar sobrescrever
+    local content = readfile(oldPath)
+    writefile(newPath, content)
+    delfile(oldPath)
+    return true
+end
+
+-- Duplica um perfil
+function ProfileManager:duplicateProfile(name, newName)
+    if not hasFileSystem() then return false end
+    local oldPath = PROFILES_FOLDER .. name .. ".json"
+    local newPath = PROFILES_FOLDER .. newName .. ".json"
+    if not isfile(oldPath) then return false end
+    if isfile(newPath) then return false end
+    local content = readfile(oldPath)
+    writefile(newPath, content)
+    return true
+end
+
+-- Salva o último perfil usado
+function ProfileManager:saveLastProfile(name)
+    if not hasFileSystem() then return end
+    writefile(LAST_PROFILE_FILE, name)
+end
+
+-- Carrega o último perfil usado
+function ProfileManager:loadLastProfile()
+    if not hasFileSystem() then return nil end
+    if not isfile(LAST_PROFILE_FILE) then return nil end
+    return readfile(LAST_PROFILE_FILE)
+end
+
+-- Obtém todas as flags atuais para salvar
+function ProfileManager:getCurrentProfileData()
+    local data = {}
+    for flag, value in pairs(Core.Flags) do
+        data[flag] = value
+    end
+    return data
+end
+
+-- Aplica um perfil (define todas as flags)
+function ProfileManager:applyProfile(data)
+    for flag, value in pairs(data) do
+        Core:SetFlag(flag, value)
+    end
+end
+
+print("[ProfileManager] Carregado!")
+
+-- ============================================================
+-- INPUT SYSTEM
+-- ============================================================
+local Input = {}
+
+function Input:init(mainFrame)
+    local UserInputService = Core.Services.UserInputService
+
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+
+        if input.KeyCode == Enum.KeyCode.F1 then
+            mainFrame.Visible = not mainFrame.Visible
+        end
+
+        if input.KeyCode == Enum.KeyCode.KeypadOne then
+            Core:SetFlag("AutoAttack", not Core:GetFlag("AutoAttack", false))
+        end
+
+        if input.KeyCode == Enum.KeyCode.KeypadTwo then
+            Core:SetFlag("AutoFarm", not Core:GetFlag("AutoFarm", false))
+        end
+
+        if input.KeyCode == Enum.KeyCode.KeypadThree then
+            Core:SetFlag("FullBright", not Core:GetFlag("FullBright", false))
+        end
+
+        if input.KeyCode == Enum.KeyCode.KeypadFour then
+            Core:SetFlag("RemoveFog", not Core:GetFlag("RemoveFog", false))
+        end
+
+        if input.KeyCode == Enum.KeyCode.N then
+            Core:SetFlag("Speed", not Core:GetFlag("Speed", false))
+        end
+
+        if input.KeyCode == Enum.KeyCode.Y then
+            Core:SetFlag("InfiniteJump", not Core:GetFlag("InfiniteJump", false))
+        end
+    end)
+
+    UserInputService.JumpRequest:Connect(function()
+        if Core:GetFlag("InfiniteJump", false) then
+            local char = player.Character
+            if char then
+                local hum = char:FindFirstChild("Humanoid")
+                if hum then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end
+    end)
+
+    print("[Input] Atalhos carregados!")
+end
+
+-- ============================================================
+-- INICIALIZAÇÃO DAS FLAGS
+-- ============================================================
+Core:SetFlag("AutoFarm", false)
+Core:SetFlag("LockOn", false)
+Core:SetFlag("AutoAttack", false)
+Core:SetFlag("Speed", false)
+Core:SetFlag("SpeedValue", 160)
+Core:SetFlag("AutofarmDistance", 3)
+Core:SetFlag("BurstCount", 3)
+Core:SetFlag("AttackCooldown", 0.12)
+Core:SetFlag("AutofarmModeAbove", false)
+Core:SetFlag("AutofarmMode", "Behind")
+
+Core:SetFlag("FullBright", false)
+Core:SetFlag("InfiniteJump", false)
+Core:SetFlag("NoClip", false)
+Core:SetFlag("RemoveFog", false)
+
+Core:SetFlag("ESPEnabled", false)
+Core:SetFlag("TracersEnabled", false)
+Core:SetFlag("HealthBarsEnabled", false)
+Core:SetFlag("PlayerESPEnabled", false)
+Core:SetFlag("FOVEnabled", false)
+
+Core:SetFlag("AutoLoad", false)
+
+-- ============================================================
+-- CRIAÇÃO DA UI
+-- ============================================================
+local mainWindow = Window:CreateWindow({
+    title = "Nexus Hub",
+    size = Vector2.new(600, 700),
+    icon = "⚡"
+})
+
+-- PÁGINA GERAL
+local pageGeneral = mainWindow:CreatePage("Geral", "⌂")
+Widgets:Toggle(pageGeneral, { flag = "AutoFarm", label = "Auto Farm", desc = "Farm automático", default = false })
+Widgets:Toggle(pageGeneral, { flag = "LockOn", label = "Lock On", desc = "Câmera segue o alvo", default = false })
+Widgets:Toggle(pageGeneral, { flag = "AutoAttack", label = "Auto Attack", desc = "Ataca automaticamente", default = false })
+Widgets:Toggle(pageGeneral, { flag = "Speed", label = "Speed Boost", desc = "Aumenta velocidade", default = false })
+Widgets:Slider(pageGeneral, { flag = "SpeedValue", label = "Velocidade", desc = "160-300", min = 160, max = 300, default = 160, step = 1 })
+
+-- PÁGINA COMBAT
+local pageCombat = mainWindow:CreatePage("Combate", "⚔")
+Widgets:Slider(pageCombat, { flag = "AutofarmDistance", label = "Distância AutoFarm", desc = "1-10", min = 1, max = 10, default = 3, step = 0.5 })
+Widgets:Slider(pageCombat, { flag = "BurstCount", label = "Burst Count", desc = "1-10", min = 1, max = 10, default = 3, step = 1 })
+Widgets:Slider(pageCombat, { flag = "AttackCooldown", label = "Cooldown", desc = "0.05-0.5s", min = 0.05, max = 0.5, default = 0.12, step = 0.01 })
+Widgets:Toggle(pageCombat, { flag = "AutofarmModeAbove", label = "Modo Above", desc = "Above ou Behind", default = false })
+Core:Connect("FlagChanged", function(flag, value)
+    if flag == "AutofarmModeAbove" then
+        Core:SetFlag("AutofarmMode", value and "Above" or "Behind")
+    end
+end)
+
+-- PÁGINA DESERT RAID (mesma de antes)
+local pageDesert = mainWindow:CreatePage("Desert Raid", "🏜️")
+local sectionLabel = Instance.new("TextLabel")
+sectionLabel.Size = UDim2.new(1, -20, 0, 25)
+sectionLabel.Position = UDim2.new(0, 10, 0, 5)
+sectionLabel.BackgroundTransparency = 1
+sectionLabel.Text = "🏜️ Desert Raid - Click Detectors"
+sectionLabel.Font = Theme.Fonts.Bold
+sectionLabel.TextSize = 14
+sectionLabel.TextColor3 = Theme.Colors.Text
+sectionLabel.TextXAlignment = Enum.TextXAlignment.Left
+sectionLabel.Parent = pageDesert
+
+local clickContainer = Instance.new("Frame")
+clickContainer.Size = UDim2.new(1, 0, 0, 120)
+clickContainer.Position = UDim2.new(0, 0, 0, 35)
+clickContainer.BackgroundColor3 = Theme.Colors.Surface
+clickContainer.BackgroundTransparency = Theme.Transparency.Surface
+clickContainer.BorderSizePixel = 0
+clickContainer.Parent = pageDesert
+local clickCorner = Instance.new("UICorner")
+clickCorner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+clickCorner.Parent = clickContainer
+
+local clickLayout = Instance.new("UIListLayout")
+clickLayout.FillDirection = Enum.FillDirection.Vertical
+clickLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+clickLayout.Padding = UDim.new(0, 6)
+clickLayout.Parent = clickContainer
+local clickPadding = Instance.new("UIPadding")
+clickPadding.PaddingTop = UDim.new(0, 8)
+clickPadding.Parent = clickContainer
+
+local function createClickButton(text, color, getDetector)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.9, 0, 0, 30)
+    btn.BackgroundColor3 = color
+    btn.BackgroundTransparency = 0.2
+    btn.Text = text
+    btn.Font = Theme.Fonts.Default
+    btn.TextSize = 12
+    btn.TextColor3 = Theme.Colors.Text
+    btn.BorderSizePixel = 0
+    btn.Parent = clickContainer
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = btn
+    btn.MouseButton1Click:Connect(function()
+        local detector = getDetector()
+        if detector then
+            fireclickdetector(detector, 0, 0)
+            btn.BackgroundColor3 = Theme.Colors.Success
+            btn.BackgroundTransparency = 0.1
+            task.wait(0.3)
+            btn.BackgroundColor3 = color
+            btn.BackgroundTransparency = 0.2
+        else
+            btn.Text = "❌ Não encontrado"
+            task.wait(1)
+            btn.Text = text
+        end
+    end)
+    return btn
+end
+
+createClickButton("🔮 Ativar Pedestal", Color3.fromRGB(200, 180, 80), function()
+    local pedestal = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Pedestal")
+    return pedestal and pedestal:FindFirstChild("ClickDetector")
+end)
+createClickButton("🏪 Ativar Vending Machine", Color3.fromRGB(80, 180, 200), function()
+    local vendingPart = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("VendingMachineClickPart")
+    return vendingPart and vendingPart:FindFirstChild("ClickDetector")
+end)
+createClickButton("🐉 Ativar Dragão", Color3.fromRGB(200, 80, 80), function()
+    local dragonStuff = workspace:FindFirstChild("DragonBossStuff")
+    if dragonStuff then
+        local clickPart = dragonStuff:FindFirstChild("ClickPart")
+        return clickPart and clickPart:FindFirstChild("ClickDetector")
+    end
+    return nil
+end)
+
+local spawnSection = Instance.new("Frame")
+spawnSection.Size = UDim2.new(1, 0, 0, 30)
+spawnSection.Position = UDim2.new(0, 0, 0, 165)
+spawnSection.BackgroundTransparency = 1
+spawnSection.Parent = pageDesert
+
+local spawnLabel = Instance.new("TextLabel")
+spawnLabel.Size = UDim2.new(1, -20, 1, 0)
+spawnLabel.Position = UDim2.new(0, 10, 0, 0)
+spawnLabel.BackgroundTransparency = 1
+spawnLabel.Text = "📍 Teletransporte para Spawns"
+spawnLabel.Font = Theme.Fonts.Bold
+spawnLabel.TextSize = 12
+spawnLabel.TextColor3 = Theme.Colors.TextDim
+spawnLabel.TextXAlignment = Enum.TextXAlignment.Left
+spawnLabel.Parent = spawnSection
+
+local spawnRefreshBtn = Instance.new("TextButton")
+spawnRefreshBtn.Size = UDim2.new(0.9, 0, 0, 28)
+spawnRefreshBtn.Position = UDim2.new(0.05, 0, 0, 205)
+spawnRefreshBtn.BackgroundColor3 = Theme.Colors.Primary
+spawnRefreshBtn.BackgroundTransparency = 0.2
+spawnRefreshBtn.Text = "🔄 Atualizar Spawns"
+spawnRefreshBtn.Font = Theme.Fonts.Default
+spawnRefreshBtn.TextSize = 12
+spawnRefreshBtn.TextColor3 = Theme.Colors.Text
+spawnRefreshBtn.BorderSizePixel = 0
+spawnRefreshBtn.Parent = pageDesert
+local refreshCorner = Instance.new("UICorner")
+refreshCorner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+refreshCorner.Parent = spawnRefreshBtn
+
+local spawnListFrame = Instance.new("ScrollingFrame")
+spawnListFrame.Size = UDim2.new(1, 0, 0, 180)
+spawnListFrame.Position = UDim2.new(0, 0, 0, 240)
+spawnListFrame.BackgroundColor3 = Theme.Colors.Surface
+spawnListFrame.BackgroundTransparency = Theme.Transparency.Surface
+spawnListFrame.BorderSizePixel = 0
+spawnListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+spawnListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+spawnListFrame.ScrollBarThickness = 3
+spawnListFrame.Parent = pageDesert
+local spawnCorner = Instance.new("UICorner")
+spawnCorner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+spawnCorner.Parent = spawnListFrame
+
+local spawnLayout = Instance.new("UIListLayout")
+spawnLayout.Padding = UDim.new(0, 4)
+spawnLayout.Parent = spawnListFrame
+
+local function populateSpawnList()
+    for _, child in ipairs(spawnListFrame:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    local locations = {}
+    local artifactFolder = workspace:FindFirstChild("LibraryDungeon") and workspace.LibraryDungeon:FindFirstChild("ArtifactSpawns")
+    if artifactFolder then
+        local count = 0
+        for _, part in ipairs(artifactFolder:GetChildren()) do
+            if part:IsA("BasePart") then
+                count = count + 1
+                table.insert(locations, { name = "ArtifactSpawn #" .. count, position = part.Position + Vector3.new(0, 2, 5) })
+            end
+        end
+    end
+    local wendigoPart = workspace:FindFirstChild("DesertedDesert") and workspace.DesertedDesert:FindFirstChild("Wendigo") and workspace.DesertedDesert.Wendigo:FindFirstChild("BossSpawnPart")
+    if wendigoPart and wendigoPart:IsA("BasePart") then
+        table.insert(locations, { name = "Wendigo Spawn", position = wendigoPart.Position + Vector3.new(0, 2, 5) })
+    end
+    if #locations == 0 then
+        local empty = Instance.new("TextLabel")
+        empty.Size = UDim2.new(1, -10, 0, 30)
+        empty.BackgroundColor3 = Theme.Colors.Surface
+        empty.BackgroundTransparency = 0.5
+        empty.Text = "   Nenhum spawn encontrado"
+        empty.Font = Theme.Fonts.Default
+        empty.TextSize = 11
+        empty.TextColor3 = Theme.Colors.TextMuted
+        empty.TextXAlignment = Enum.TextXAlignment.Left
+        empty.Parent = spawnListFrame
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        corner.Parent = empty
+        return
+    end
+    table.sort(locations, function(a, b) return a.name < b.name end)
+    for _, data in ipairs(locations) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -10, 0, 28)
+        btn.BackgroundColor3 = Theme.Colors.SurfaceLight
+        btn.BackgroundTransparency = 0.5
+        btn.Text = "   📍 " .. data.name
+        btn.Font = Theme.Fonts.Default
+        btn.TextSize = 11
+        btn.TextColor3 = Theme.Colors.Text
+        btn.TextXAlignment = Enum.TextXAlignment.Left
+        btn.BorderSizePixel = 0
+        btn.Parent = spawnListFrame
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        corner.Parent = btn
+        btn.MouseButton1Click:Connect(function()
+            Teleport:ultraSmoothTeleport(data.position)
+            btn.BackgroundColor3 = Theme.Colors.Success
+            btn.BackgroundTransparency = 0.1
+            task.wait(0.3)
+            btn.BackgroundColor3 = Theme.Colors.SurfaceLight
+            btn.BackgroundTransparency = 0.5
+        end)
+    end
+    spawnListFrame.CanvasSize = UDim2.new(0, 0, 0, #locations * 32 + 10)
+end
+task.spawn(populateSpawnList)
+spawnRefreshBtn.MouseButton1Click:Connect(populateSpawnList)
+spawnListFrame:GetPropertyChangedSignal("CanvasSize"):Connect(function()
+    spawnListFrame.Size = UDim2.new(1, 0, 0, math.min(spawnListFrame.CanvasSize.Y.Offset + 10, 180))
+end)
+
+-- PÁGINA TELEPORT (LiveNPCS)
+local pageTeleport = mainWindow:CreatePage("Teleport", "📡")
+local teleportTitle = Instance.new("TextLabel")
+teleportTitle.Size = UDim2.new(1, -20, 0, 25)
+teleportTitle.Position = UDim2.new(0, 10, 0, 5)
+teleportTitle.BackgroundTransparency = 1
+teleportTitle.Text = "📡 Teleport para NPCs (LiveNPCS)"
+teleportTitle.Font = Theme.Fonts.Bold
+teleportTitle.TextSize = 14
+teleportTitle.TextColor3 = Theme.Colors.Text
+teleportTitle.TextXAlignment = Enum.TextXAlignment.Left
+teleportTitle.Parent = pageTeleport
+
+local refreshNPCBtn = Instance.new("TextButton")
+refreshNPCBtn.Size = UDim2.new(0.9, 0, 0, 30)
+refreshNPCBtn.Position = UDim2.new(0.05, 0, 0, 35)
+refreshNPCBtn.BackgroundColor3 = Theme.Colors.Primary
+refreshNPCBtn.BackgroundTransparency = 0.2
+refreshNPCBtn.Text = "🔄 Atualizar Lista"
+refreshNPCBtn.Font = Theme.Fonts.Default
+refreshNPCBtn.TextSize = 12
+refreshNPCBtn.TextColor3 = Theme.Colors.Text
+refreshNPCBtn.BorderSizePixel = 0
+refreshNPCBtn.Parent = pageTeleport
+local refreshCorner2 = Instance.new("UICorner")
+refreshCorner2.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+refreshCorner2.Parent = refreshNPCBtn
+
+local npcListFrame = Instance.new("ScrollingFrame")
+npcListFrame.Size = UDim2.new(1, 0, 0, 400)
+npcListFrame.Position = UDim2.new(0, 0, 0, 75)
+npcListFrame.BackgroundColor3 = Theme.Colors.Surface
+npcListFrame.BackgroundTransparency = Theme.Transparency.Surface
+npcListFrame.BorderSizePixel = 0
+npcListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+npcListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+npcListFrame.ScrollBarThickness = 3
+npcListFrame.Parent = pageTeleport
+local npcCorner = Instance.new("UICorner")
+npcCorner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+npcCorner.Parent = npcListFrame
+
+local npcLayout = Instance.new("UIListLayout")
+npcLayout.Padding = UDim.new(0, 4)
+npcLayout.Parent = npcListFrame
+
+local function populateNPCList()
+    for _, child in ipairs(npcListFrame:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    local npcNames = Teleport:getNPCList()
+    if #npcNames == 0 then
+        local empty = Instance.new("TextLabel")
+        empty.Size = UDim2.new(1, -10, 0, 30)
+        empty.BackgroundColor3 = Theme.Colors.Surface
+        empty.BackgroundTransparency = 0.5
+        empty.Text = "   Nenhum NPC encontrado (LiveNPCS)"
+        empty.Font = Theme.Fonts.Default
+        empty.TextSize = 11
+        empty.TextColor3 = Theme.Colors.TextMuted
+        empty.TextXAlignment = Enum.TextXAlignment.Left
+        empty.Parent = npcListFrame
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        corner.Parent = empty
+        return
+    end
+    for _, npcName in ipairs(npcNames) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -10, 0, 28)
+        btn.BackgroundColor3 = Theme.Colors.SurfaceLight
+        btn.BackgroundTransparency = 0.5
+        btn.Text = "   📍 " .. npcName
+        btn.Font = Theme.Fonts.Default
+        btn.TextSize = 11
+        btn.TextColor3 = Theme.Colors.Text
+        btn.TextXAlignment = Enum.TextXAlignment.Left
+        btn.BorderSizePixel = 0
+        btn.Parent = npcListFrame
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        corner.Parent = btn
+        btn.MouseButton1Click:Connect(function()
+            local success, msg = Teleport:safeTeleportToNPC(npcName)
+            if success then
+                btn.BackgroundColor3 = Theme.Colors.Success
+                btn.BackgroundTransparency = 0.1
+                task.wait(0.3)
+                btn.BackgroundColor3 = Theme.Colors.SurfaceLight
+                btn.BackgroundTransparency = 0.5
+            else
+                btn.Text = "❌ " .. msg
+                task.wait(1.5)
+                btn.Text = "   📍 " .. npcName
+            end
+        end)
+    end
+    npcListFrame.CanvasSize = UDim2.new(0, 0, 0, #npcNames * 32 + 10)
+end
+task.spawn(populateNPCList)
+refreshNPCBtn.MouseButton1Click:Connect(populateNPCList)
+npcListFrame:GetPropertyChangedSignal("CanvasSize"):Connect(function()
+    npcListFrame.Size = UDim2.new(1, 0, 0, math.min(npcListFrame.CanvasSize.Y.Offset + 10, 400))
+end)
+
+-- PÁGINA VISUAL
+local pageVisual = mainWindow:CreatePage("Visual", "👁️")
+Widgets:Toggle(pageVisual, { flag = "FullBright", label = "FullBright", desc = "Iluminação total (Keypad3)", default = false })
+Widgets:Toggle(pageVisual, { flag = "InfiniteJump", label = "Infinite Jump", desc = "Pulo infinito (Y)", default = false })
+Widgets:Toggle(pageVisual, { flag = "NoClip", label = "NoClip", desc = "Atravessa paredes", default = false })
+Widgets:Toggle(pageVisual, { flag = "RemoveFog", label = "Remove Fog", desc = "Remove neblina (Keypad4)", default = false })
+
+-- PÁGINA ESP
+local pageESP = mainWindow:CreatePage("ESP", "👾")
+Widgets:Toggle(pageESP, { flag = "ESPEnabled", label = "ESP", desc = "Destaque NPCs (Alive)", default = false })
+Widgets:Toggle(pageESP, { flag = "TracersEnabled", label = "Tracers", desc = "Linhas até NPCs", default = false })
+Widgets:Toggle(pageESP, { flag = "HealthBarsEnabled", label = "Health Bars", desc = "Barras de vida", default = false })
+Widgets:Toggle(pageESP, { flag = "PlayerESPEnabled", label = "Player ESP", desc = "Destaque jogadores", default = false })
+Widgets:Toggle(pageESP, { flag = "FOVEnabled", label = "FOV Circle", desc = "Círculo de mira", default = false })
+
+-- ============================================================
+-- PÁGINA CONFIGS (Profiles)
+-- ============================================================
+local pageConfigs = mainWindow:CreatePage("Configs", "⚙️")
+
+-- Variáveis de estado da página
+local profileList = {}
+local selectedProfile = nil
+local lastLoadedProfile = nil
+local searchQuery = ""
+
+-- Função para criar um TextBox estilizado
+local function createTextBox(parent, placeholder, text, callback)
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(1, -20, 0, 30)
+    box.Position = UDim2.new(0, 10, 0, 0)
+    box.BackgroundColor3 = Theme.Colors.SurfaceLight
+    box.BackgroundTransparency = Theme.Transparency.Surface
+    box.TextColor3 = Theme.Colors.Text
+    box.Font = Theme.Fonts.Default
+    box.TextSize = 12
+    box.Text = text or ""
+    box.PlaceholderText = placeholder or ""
+    box.ClearTextOnFocus = false
+    box.BorderSizePixel = 0
+    box.Parent = parent
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = box
+    if callback then
+        box:GetPropertyChangedSignal("Text"):Connect(function()
+            callback(box.Text)
+        end)
+    end
+    return box
+end
+
+-- Container principal (ScrollingFrame)
+local configsScrolling = Instance.new("ScrollingFrame")
+configsScrolling.Size = UDim2.new(1, -10, 1, 0)
+configsScrolling.Position = UDim2.new(0, 5, 0, 0)
+configsScrolling.BackgroundTransparency = 1
+configsScrolling.ScrollBarThickness = 3
+configsScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
+configsScrolling.AutomaticCanvasSize = Enum.AutomaticSize.Y
+configsScrolling.Parent = pageConfigs
+
+local configsLayout = Instance.new("UIListLayout")
+configsLayout.Padding = UDim.new(0, 8)
+configsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+configsLayout.Parent = configsScrolling
+
+-- Título da seção
+local titleSection = Instance.new("TextLabel")
+titleSection.Size = UDim2.new(1, -20, 0, 25)
+titleSection.BackgroundTransparency = 1
+titleSection.Text = "📂 Gerenciador de Perfis"
+titleSection.Font = Theme.Fonts.Bold
+titleSection.TextSize = 14
+titleSection.TextColor3 = Theme.Colors.Text
+titleSection.TextXAlignment = Enum.TextXAlignment.Left
+titleSection.Parent = configsScrolling
+
+-- Barra de pesquisa
+local searchBox = createTextBox(configsScrolling, "🔍 Buscar perfil...", "", function(text)
+    searchQuery = text:lower()
+    refreshProfileList()
+end)
+
+-- Container da lista de perfis
+local listContainer = Instance.new("Frame")
+listContainer.Size = UDim2.new(1, 0, 0, 200)
+listContainer.BackgroundColor3 = Theme.Colors.Surface
+listContainer.BackgroundTransparency = Theme.Transparency.Surface
+listContainer.BorderSizePixel = 0
+listContainer.Parent = configsScrolling
+local listCorner = Instance.new("UICorner")
+listCorner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+listCorner.Parent = listContainer
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 4)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = listContainer
+
+local listPadding = Instance.new("UIPadding")
+listPadding.PaddingTop = UDim.new(0, 6)
+listPadding.PaddingBottom = UDim.new(0, 6)
+listPadding.Parent = listContainer
+
+-- Botões de ação (Create, Rename, Duplicate, Delete, Refresh)
+local actionContainer = Instance.new("Frame")
+actionContainer.Size = UDim2.new(1, 0, 0, 40)
+actionContainer.BackgroundTransparency = 1
+actionContainer.Parent = configsScrolling
+
+local actionLayout = Instance.new("UIListLayout")
+actionLayout.FillDirection = Enum.FillDirection.Horizontal
+actionLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+actionLayout.Padding = UDim.new(0, 6)
+actionLayout.Parent = actionContainer
+
+local function createActionButton(text, color, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 80, 0, 30)
+    btn.BackgroundColor3 = color or Theme.Colors.Primary
+    btn.BackgroundTransparency = 0.2
+    btn.Text = text
+    btn.Font = Theme.Fonts.Default
+    btn.TextSize = 11
+    btn.TextColor3 = Theme.Colors.Text
+    btn.BorderSizePixel = 0
+    btn.Parent = actionContainer
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = btn
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+local function promptForName(title, default, callback)
+    local dialog = Instance.new("Frame")
+    dialog.Size = UDim2.new(0, 300, 0, 120)
+    dialog.Position = UDim2.new(0.5, -150, 0.5, -60)
+    dialog.BackgroundColor3 = Theme.Colors.Background
+    dialog.BackgroundTransparency = Theme.Transparency.Background
+    dialog.BorderSizePixel = 0
+    dialog.Parent = mainWindow.Gui
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = dialog
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Theme.Colors.Stroke
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.3
+    stroke.Parent = dialog
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 0, 30)
+    label.Position = UDim2.new(0, 10, 0, 10)
+    label.BackgroundTransparency = 1
+    label.Text = title
+    label.Font = Theme.Fonts.Bold
+    label.TextSize = 12
+    label.TextColor3 = Theme.Colors.Text
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = dialog
+
+    local input = Instance.new("TextBox")
+    input.Size = UDim2.new(1, -20, 0, 30)
+    input.Position = UDim2.new(0, 10, 0, 45)
+    input.BackgroundColor3 = Theme.Colors.SurfaceLight
+    input.BackgroundTransparency = Theme.Transparency.Surface
+    input.TextColor3 = Theme.Colors.Text
+    input.Font = Theme.Fonts.Default
+    input.TextSize = 12
+    input.Text = default or ""
+    input.ClearTextOnFocus = true
+    input.BorderSizePixel = 0
+    input.Parent = dialog
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    inputCorner.Parent = input
+
+    local btnContainer = Instance.new("Frame")
+    btnContainer.Size = UDim2.new(1, 0, 0, 30)
+    btnContainer.Position = UDim2.new(0, 0, 0, 80)
+    btnContainer.BackgroundTransparency = 1
+    btnContainer.Parent = dialog
+
+    local btnLayout = Instance.new("UIListLayout")
+    btnLayout.FillDirection = Enum.FillDirection.Horizontal
+    btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    btnLayout.Padding = UDim.new(0, 10)
+    btnLayout.Parent = btnContainer
+
+    local function closeDialog()
+        dialog:Destroy()
+    end
+
+    local okBtn = Instance.new("TextButton")
+    okBtn.Size = UDim2.new(0, 60, 0, 25)
+    okBtn.BackgroundColor3 = Theme.Colors.Success
+    okBtn.BackgroundTransparency = 0.2
+    okBtn.Text = "OK"
+    okBtn.Font = Theme.Fonts.Default
+    okBtn.TextSize = 12
+    okBtn.TextColor3 = Theme.Colors.Text
+    okBtn.BorderSizePixel = 0
+    okBtn.Parent = btnContainer
+    local okCorner = Instance.new("UICorner")
+    okCorner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    okCorner.Parent = okBtn
+    okBtn.MouseButton1Click:Connect(function()
+        local val = input.Text
+        if val and val ~= "" then
+            callback(val)
+        end
+        closeDialog()
+    end)
+
+    local cancelBtn = Instance.new("TextButton")
+    cancelBtn.Size = UDim2.new(0, 60, 0, 25)
+    cancelBtn.BackgroundColor3 = Theme.Colors.Danger
+    cancelBtn.BackgroundTransparency = 0.2
+    cancelBtn.Text = "Cancel"
+    cancelBtn.Font = Theme.Fonts.Default
+    cancelBtn.TextSize = 12
+    cancelBtn.TextColor3 = Theme.Colors.Text
+    cancelBtn.BorderSizePixel = 0
+    cancelBtn.Parent = btnContainer
+    local cancelCorner = Instance.new("UICorner")
+    cancelCorner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    cancelCorner.Parent = cancelBtn
+    cancelBtn.MouseButton1Click:Connect(closeDialog)
+
+    input:CaptureFocus()
+    return dialog
+end
+
+-- Função para atualizar a lista de perfis
+function refreshProfileList()
+    -- Limpa lista atual
+    for _, child in ipairs(listContainer:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+
+    local profiles = ProfileManager:listProfiles()
+    local filtered = {}
+    for _, name in ipairs(profiles) do
+        if searchQuery == "" or name:lower():find(searchQuery) then
+            table.insert(filtered, name)
+        end
+    end
+
+    if #filtered == 0 then
+        local empty = Instance.new("TextLabel")
+        empty.Size = UDim2.new(1, -10, 0, 30)
+        empty.BackgroundTransparency = 1
+        empty.Text = "   Nenhum perfil encontrado"
+        empty.Font = Theme.Fonts.Default
+        empty.TextSize = 11
+        empty.TextColor3 = Theme.Colors.TextMuted
+        empty.TextXAlignment = Enum.TextXAlignment.Left
+        empty.Parent = listContainer
+        return
+    end
+
+    local lastLoaded = ProfileManager:loadLastProfile()
+
+    for _, name in ipairs(filtered) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -10, 0, 28)
+        btn.BackgroundColor3 = Theme.Colors.SurfaceLight
+        btn.BackgroundTransparency = 0.5
+        btn.Text = ""
+        btn.BorderSizePixel = 0
+        btn.Parent = listContainer
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+        corner.Parent = btn
+
+        -- Label com ícone
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -20, 1, 0)
+        label.Position = UDim2.new(0, 10, 0, 0)
+        label.BackgroundTransparency = 1
+        local isCurrent = (name == lastLoaded)
+        local icon = isCurrent and "★ " or "□ "
+        label.Text = icon .. name
+        label.Font = Theme.Fonts.Default
+        label.TextSize = 11
+        label.TextColor3 = isCurrent and Theme.Colors.Warning or Theme.Colors.Text
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = btn
+
+        -- Carregar ao clicar
+        btn.MouseButton1Click:Connect(function()
+            selectedProfile = name
+            loadProfile(name)
+            refreshProfileList()
+        end)
+    end
+
+    -- Ajusta altura do container
+    listContainer.Size = UDim2.new(1, 0, 0, math.min(#filtered * 32 + 12, 200))
+end
+
+-- Função para carregar um perfil
+function loadProfile(name)
+    if not name then return end
+    local data = ProfileManager:loadProfile(name)
+    if data then
+        ProfileManager:applyProfile(data)
+        ProfileManager:saveLastProfile(name)
+        lastLoadedProfile = name
+        Core:Notify("Perfil \"" .. name .. "\" carregado!")
+        print("[ProfileManager] Perfil carregado:", name)
+    else
+        Core:Notify("Falha ao carregar perfil: " .. name, 2)
+    end
+end
+
+-- Função para salvar perfil atual
+function saveProfile(name)
+    if not name or name == "" then return end
+    local data = ProfileManager:getCurrentProfileData()
+    if ProfileManager:saveProfile(name, data) then
+        ProfileManager:saveLastProfile(name)
+        Core:Notify("Perfil \"" .. name .. "\" salvo!")
+        refreshProfileList()
+    else
+        Core:Notify("Falha ao salvar perfil!", 2)
+    end
+end
+
+-- Função para salvar como (prompt)
+function saveProfileAs()
+    promptForName("Salvar como...", "", function(name)
+        if name and name ~= "" then
+            saveProfile(name)
+        end
+    end)
+end
+
+-- Criação dos botões de ação
+createActionButton("Criar", Theme.Colors.Primary, function()
+    promptForName("Criar novo perfil", "", function(name)
+        if name and name ~= "" then
+            if table.find(ProfileManager:listProfiles(), name) then
+                Core:Notify("Perfil já existe!", 2)
+                return
+            end
+            saveProfile(name)
+        end
+    end)
+end)
+
+createActionButton("Renomear", Theme.Colors.Warning, function()
+    if not selectedProfile then
+        Core:Notify("Selecione um perfil primeiro!", 2)
+        return
+    end
+    promptForName("Renomear para...", selectedProfile, function(newName)
+        if newName and newName ~= "" and newName ~= selectedProfile then
+            if table.find(ProfileManager:listProfiles(), newName) then
+                Core:Notify("Já existe um perfil com esse nome!", 2)
+                return
+            end
+            if ProfileManager:renameProfile(selectedProfile, newName) then
+                Core:Notify("Perfil renomeado!")
+                selectedProfile = newName
+                refreshProfileList()
+            else
+                Core:Notify("Falha ao renomear!", 2)
+            end
+        end
+    end)
+end)
+
+createActionButton("Duplicar", Theme.Colors.Primary, function()
+    if not selectedProfile then
+        Core:Notify("Selecione um perfil primeiro!", 2)
+        return
+    end
+    promptForName("Duplicar como...", selectedProfile .. "_copy", function(newName)
+        if newName and newName ~= "" then
+            if table.find(ProfileManager:listProfiles(), newName) then
+                Core:Notify("Já existe um perfil com esse nome!", 2)
+                return
+            end
+            if ProfileManager:duplicateProfile(selectedProfile, newName) then
+                Core:Notify("Perfil duplicado!")
+                refreshProfileList()
+            else
+                Core:Notify("Falha ao duplicar!", 2)
+            end
+        end
+    end)
+end)
+
+createActionButton("Deletar", Theme.Colors.Danger, function()
+    if not selectedProfile then
+        Core:Notify("Selecione um perfil primeiro!", 2)
+        return
+    end
+    if selectedProfile == ProfileManager:loadLastProfile() then
+        Core:Notify("Não é possível deletar o perfil atual!", 2)
+        return
+    end
+    if ProfileManager:deleteProfile(selectedProfile) then
+        Core:Notify("Perfil deletado!")
+        selectedProfile = nil
+        refreshProfileList()
+    else
+        Core:Notify("Falha ao deletar!", 2)
+    end
+end)
+
+createActionButton("Atualizar", Theme.Colors.Primary, function()
+    refreshProfileList()
+    Core:Notify("Lista atualizada!")
+end)
+
+-- Seção Load/Save
+local loadSaveContainer = Instance.new("Frame")
+loadSaveContainer.Size = UDim2.new(1, 0, 0, 40)
+loadSaveContainer.BackgroundTransparency = 1
+loadSaveContainer.Parent = configsScrolling
+
+local loadSaveLayout = Instance.new("UIListLayout")
+loadSaveLayout.FillDirection = Enum.FillDirection.Horizontal
+loadSaveLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+loadSaveLayout.Padding = UDim.new(0, 6)
+loadSaveLayout.Parent = loadSaveContainer
+
+local function createLoadSaveButton(text, color, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 70, 0, 30)
+    btn.BackgroundColor3 = color or Theme.Colors.Primary
+    btn.BackgroundTransparency = 0.2
+    btn.Text = text
+    btn.Font = Theme.Fonts.Default
+    btn.TextSize = 11
+    btn.TextColor3 = Theme.Colors.Text
+    btn.BorderSizePixel = 0
+    btn.Parent = loadSaveContainer
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, Theme.Sizes.CornerRadius)
+    corner.Parent = btn
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+createLoadSaveButton("Carregar", Theme.Colors.Primary, function()
+    if not selectedProfile then
+        Core:Notify("Selecione um perfil!", 2)
+        return
+    end
+    loadProfile(selectedProfile)
+    refreshProfileList()
+end)
+
+createLoadSaveButton("Salvar", Theme.Colors.Success, function()
+    if not selectedProfile then
+        Core:Notify("Selecione um perfil!", 2)
+        return
+    end
+    saveProfile(selectedProfile)
+    refreshProfileList()
+end)
+
+createLoadSaveButton("Salvar Como", Theme.Colors.Success, function()
+    saveProfileAs()
+end)
+
+-- AutoLoad toggle
+local autoLoadContainer = Instance.new("Frame")
+autoLoadContainer.Size = UDim2.new(1, 0, 0, 40)
+autoLoadContainer.BackgroundTransparency = 1
+autoLoadContainer.Parent = configsScrolling
+
+-- Usar Widgets.Toggle para AutoLoad
+local autoLoadToggle = Widgets:Toggle(autoLoadContainer, {
+    flag = "AutoLoad",
+    label = "☑ Auto Load",
+    desc = "Carregar automaticamente o último perfil ao iniciar",
+    default = false
+})
+
+-- AutoLoad na inicialização
+if Core:GetFlag("AutoLoad", false) then
+    local last = ProfileManager:loadLastProfile()
+    if last then
+        task.wait(0.5) -- espera UI carregar
+        loadProfile(last)
+    end
+end
+
+-- Inicializa lista
+refreshProfileList()
+
+-- ============================================================
+-- FINALIZAÇÃO
+-- ============================================================
+mainWindow:SwitchPage(pageGeneral)
+Input:init(mainWindow.Frame)
+
+print("UI criada com sucesso!")
+print("Atalhos: F1 (UI), Keypad1 (AutoAttack), Keypad2 (AutoFarm), Keypad3 (FullBright), Keypad4 (RemoveFog), N (Speed), Y (InfiniteJump)")
